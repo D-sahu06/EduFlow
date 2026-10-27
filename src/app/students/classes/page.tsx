@@ -213,13 +213,13 @@ export default function ClassesPage() {
               aria-label="Go back"
               className="mt-1 rounded-xl border border-slate-200 bg-white p-2.5 hover:bg-slate-50"
             >
-              <ArrowLeft size={19} />
+              <ArrowLeft size={19} />Back
             </button>
 
             <div>
-              <p className="text-sm font-medium text-amber-700">
-                Student Information / Academic Setup
-              </p>
+              {/* <p className="text-sm font-medium text-amber-700">
+                Student Information 
+              </p> */}
               <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
                 Class & Section
               </h1>

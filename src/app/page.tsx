@@ -206,8 +206,12 @@ export default function HomePage() {
               <Building2 size={23} />
             </span>
             <span className="text-xl font-extrabold tracking-tight text-slate-900">
-              EduNexus<span className="text-yellow-400"></span>
+              Edu <span className="text-yellow-400">Flow</span>
+              <p className="text-sm text-yellow-400">
+              Erp Management
+            </p>
             </span>
+            
           </a>
 
           {/* Center: Navigation */}

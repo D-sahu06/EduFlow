@@ -2,6 +2,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Users,
   UserCheck,
@@ -12,6 +13,7 @@ import {
   ArrowRight,
   TrendingUp,
   AlertTriangle,
+  ArrowLeft,
 } from "lucide-react";
 
 const summaryCards = [
@@ -113,14 +115,22 @@ const quickActions = [
 ];
 
 export default function AttendanceDashboard() {
+  const router = useRouter();
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-6 lg:p-8">
       {/* Header */}
       <div className="mb-7 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <p className="mb-1 text-sm text-gray-500">
+           <button
+              onClick={() => router.back()}
+              className="mb-5 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            >
+              <ArrowLeft size={17} />
+              Back
+            </button>
+          {/* <p className="mb-1 text-sm text-gray-500">
             EduFlow / Attendance
-          </p>
+          </p> */}
           <h1 className="text-2xl font-bold text-gray-900 md:text-3xl">
             Attendance Dashboard
           </h1>

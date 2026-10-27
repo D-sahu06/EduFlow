@@ -136,13 +136,13 @@ export default function Sidebar() {
         className="mb-7 flex items-center gap-3 px-2"
       >
         <div className="rounded-xl bg-white p-2.5">
-          <School size={25} className="text-gray-950" />
+          <School size={25} className="text-yellow-500 " />
         </div>
         <div>
-          <h1 className="text-xl font-extrabold text-gray-950">EduNexus</h1>
-          {/* <p className="text-[10px] font-bold tracking-[2px] text-gray-800">
+          <h1 className="text-xl font-extrabold text-gray-950">Edu <span className="text-yellow-400">Flow</span></h1>
+          <p className="text-[10px] font-bold tracking-[2px] text-gray-800">
             ERP MANAGEMENT
-          </p> */}
+          </p>
         </div>
       </Link>
 
@@ -222,17 +222,7 @@ export default function Sidebar() {
         })}
       </nav>
 
-      <div className="mt-6 border-t border-yellow-500 pt-4">
-        <Link
-          href="/login"
-          onClick={() => setMobileOpen(false)}
-          className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold text-white hover:bg-yellow-300"
-        >
-          <ShieldCheck size={19} />
-          Admin Portal
-        </Link>
-      </div>
-    </>
+       </>
   );
 
   return (
