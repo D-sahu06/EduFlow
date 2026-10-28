@@ -287,8 +287,6 @@ import {
   ChevronDown,
   UserRound,
   LogOut,
-  Settings,
-  X,
   Building2,
   CalendarDays,
   IndianRupee,

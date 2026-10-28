@@ -2,6 +2,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Search,
   Download,
@@ -10,6 +11,7 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
+  ArrowLeft,
 } from "lucide-react";
 
 type AttendanceStatus = "Present" | "Absent" | "Late" | "On Leave";
@@ -95,15 +97,23 @@ export default function ViewAttendancePage() {
     link.click();
     URL.revokeObjectURL(url);
   }
+   const router = useRouter();
 
   return (
     <main className="min-h-screen bg-gray-50 p-4 md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-sm text-gray-500">
+            <button
+              onClick={() => router.back()}
+              className="mb-5 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            >
+              <ArrowLeft size={17} />
+              Back
+            </button>
+            {/* <p className="text-sm text-gray-500">
               Dashboard / Attendance / View Attendance
-            </p>
+            </p> */}
             <h1 className="mt-2 text-2xl font-extrabold text-gray-950 md:text-3xl">
               View Attendance
             </h1>
@@ -202,7 +212,7 @@ export default function ViewAttendancePage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-left text-sm">
+            <table className="w-full min-w-190 text-left text-sm">
               <thead>
                 <tr className="border-y border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                   <th className="px-4 py-4 font-semibold">Student</th>

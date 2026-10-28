@@ -1,4 +1,3 @@
-
 "use client";
 
 import Link from "next/link";
@@ -16,7 +15,6 @@ import {
   // Settings,
   ChevronDown,
   School,
-  ShieldCheck,
   Menu,
   X,
 } from "lucide-react";
@@ -40,7 +38,7 @@ const modules = [
     children: [
       { title: "Admission Dashboard", href: "/admission" },
       { title: "Applications", href: "/admission/applications" },
-      { title: "New Admission", href: "/admission/create" },
+      { title: "New Admission", href: "/admission/new" },
       { title: "Merit List", href: "/admission/merit-list" },
     ],
   },
@@ -48,7 +46,7 @@ const modules = [
     title: "Attendance",
     icon: CalendarCheck,
     children: [
-  { title: "Attendance Dashboard", href: "/attendance" },
+  { title: "Attendance Dashboard", href: "/attendance/" },
   { title: "View Attendance", href: "/attendance/view" },
   { title: "Mark Attendance", href: "/attendance/mark" },
   { title: "Attendance Reports", href: "/attendance/reports" },
@@ -60,11 +58,10 @@ const modules = [
     icon: Wallet,
     children: [
       { title: "Finance Dashboard", href: "/fees" },
-      // { title: "Fee Collection", href: "/fees/collection" },
       { title: "Fee Structure", href: "/fees/structure" },
       { title: "Pending Dues", href: "/fees/dues" },
       { title: "Receipts", href: "/fees/receipts" },
-      // { title: "Scholarships", href: "/fees/scholarships" },
+      
     ],
   },
   {
@@ -91,7 +88,7 @@ const modules = [
     title: "Student Information",
     icon: Users,
     children: [
-      { title: "All Students", href: "/students" },
+      { title: "All Students", href: "/students/all" },
      
       { title: "Classes & Sections", href: "/students/classes" },
     ],
@@ -136,10 +133,10 @@ export default function Sidebar() {
         className="mb-7 flex items-center gap-3 px-2"
       >
         <div className="rounded-xl bg-white p-2.5">
-          <School size={25} className="text-yellow-500 " />
+          <School size={25} className="text-yellow-300 " />
         </div>
         <div>
-          <h1 className="text-xl font-extrabold text-gray-950">Edu <span className="text-yellow-400">Flow</span></h1>
+          <h1 className="text-xl font-extrabold text-gray-950">Edu <span className="text-yellow-300">Flow</span></h1>
           <p className="text-[10px] font-bold tracking-[2px] text-gray-800">
             ERP MANAGEMENT
           </p>
@@ -184,7 +181,7 @@ export default function Sidebar() {
                 className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold transition ${
                   active
                     ? " text-white"
-                    : "text-black hover:bg-yellow-200"
+                    : "text-black hover:bg-yellow-300"
                 }`}
               >
                 <Icon size={19} />
@@ -196,7 +193,7 @@ export default function Sidebar() {
               </button>
 
               {isOpen && (
-                <div className="ml-5 mt-1 space-y-1 border-l-2 border-yellow-500 pl-3">
+                <div className="ml-5 mt-1 space-y-1 border-l-2 border-yellow-300 pl-3">
                   {item.children.map((child) => {
                     const childActive = isActive(child.href);
 
@@ -207,7 +204,7 @@ export default function Sidebar() {
                         onClick={() => setMobileOpen(false)}
                         className={`block rounded-lg px-3 py-2.5 text-xs font-medium transition ${
                           childActive
-                            ? "bg-gray-950 text-yellow-400"
+                            ? "bg-gray-950 text-yellow-300"
                             : "text-gray-800 hover:bg-yellow-300"
                         }`}
                       >
@@ -231,7 +228,7 @@ export default function Sidebar() {
         type="button"
         aria-label="Open navigation"
         onClick={() => setMobileOpen(true)}
-        className="fixed left-4 top-4 z-40 rounded-xl border border-gray-200 bg-yellow-400 p-3 text-gray-950 shadow-md md:hidden"
+        className="fixed left-4 top-4 z-40 rounded-xl border border-gray-200 bg-yellow-300 p-3 text-gray-950 shadow-md md:hidden"
       >
         <Menu size={21} />
       </button>

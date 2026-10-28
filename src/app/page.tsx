@@ -1,107 +1,3 @@
-
-// import Sidebar from "@/components/sidebar";
-// import Topbar from "@/components/topbar";
-
-// export default function Home() {
-//   return (
-//     <div className="min-h-screen overflow-x-hidden bg-gray-50">
-//       <Sidebar />
-
-//       {/* Main content: sidebar ke right mein */}
-//       <div className="min-w-0 md:ml-64">
-//         <Topbar />
-
-//         <main className="min-w-0 p-4 sm:p-5 md:p-6 lg:p-8">
-//           {/* Dashboard Heading */}
-//           <div className="mb-6">
-//             <p className="text-sm font-medium text-gray-500">
-//               Dashboard / Overview
-//             </p>
-
-//             <h1 className="mt-2 text-2xl font-bold text-gray-900">
-//               Dashboard Overview
-//             </h1>
-
-//             <p className="mt-1 text-sm text-gray-500">
-//               Here is what is happening at your institution today.
-//             </p>
-//           </div>
-
-//           {/* Welcome Banner */}
-//           <section className="rounded-2xl border border-yellow-200 bg-yellow-100 p-6 md:p-8">
-//             <p className="text-sm font-semibold text-gray-700">
-//               Welcome to your workspace!
-//             </p>
-
-//             <h2 className="mt-2 text-2xl font-extrabold text-gray-900">
-//               Manage your institution with EduFlow ERP
-//             </h2>
-
-//             <p className="mt-3 max-w-2xl text-sm leading-6 text-gray-700">
-//               Manage admissions, attendance, student information,
-//               fees, and institutional reports from one place.
-//             </p>
-//           </section>
-
-//           {/* Statistics Cards */}
-//           <section className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-//             {[
-//               { title: "Total Students", value: "1,250" },
-//               { title: "Total Teachers", value: "85" },
-//               { title: "Today's Attendance", value: "92%" },
-//               { title: "Pending Fees", value: "₹2.4L" },
-//             ].map((stat) => (
-//               <div
-//                 key={stat.title}
-//                 className="min-w-0 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"
-//               >
-//                 <p className="text-sm font-medium text-gray-500">
-//                   {stat.title}
-//                 </p>
-
-//                 <p className="mt-3 text-3xl font-bold text-gray-900">
-//                   {stat.value}
-//                 </p>
-
-//                 <div className="mt-3 h-1.5 w-14 rounded-full bg-yellow-400" />
-//               </div>
-//             ))}
-//           </section>
-
-//           {/* Quick Actions */}
-//           <section className="mt-6 rounded-2xl border border-gray-200 bg-white p-6">
-//             <h2 className="text-lg font-bold text-gray-900">
-//               Quick Actions
-//             </h2>
-
-//             <p className="mt-1 text-sm text-gray-500">
-//               Frequently used institution management tasks.
-//             </p>
-
-//             <div className="mt-5 flex flex-wrap gap-3">
-//               {[
-//                 "New Admission",
-//                 "Mark Attendance",
-//                 "Collect Fees",
-//                 "View Students",
-//               ].map((action) => (
-//                 <button
-//                   key={action}
-//                   type="button"
-//                   className="rounded-xl border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm font-semibold text-gray-800 transition hover:bg-yellow-400"
-//                 >
-//                   {action}
-//                 </button>
-//               ))}
-//             </div>
-//           </section>
-//         </main>
-//       </div>
-//     </div>
-//   );
-// }
-
-
 "use client";
 
 import { useState } from "react";
@@ -690,7 +586,7 @@ export default function HomePage() {
           </div>
 
           <div className="mx-auto mt-10 max-w-md rounded-2xl border border-emerald-200 bg-white p-8 shadow-xl shadow-emerald-900/5">
-            <span className="inline-flex rounded-full bg-yellow-50 px-3 py-1 text-xs font-bold text-emerald-700">
+            <span className="inline-flex rounded-full bg-yellow-50 px-3 py-1 text-xs font-bold text-yellow-300">
               CUSTOM PLAN
             </span>
             <h3 className="mt-5 text-2xl font-extrabold text-slate-900">
@@ -701,7 +597,7 @@ export default function HomePage() {
               implementation requirements.
             </p>
             <div className="mt-6 flex items-center gap-2">
-              <IndianRupee size={25} className="text-emerald-600" />
+              <IndianRupee size={25} className="text-yellow-300" />
               <span className="text-2xl font-extrabold text-slate-900">
                 Request a quote
               </span>
@@ -716,7 +612,7 @@ export default function HomePage() {
                 <li key={item} className="flex gap-3 text-sm text-slate-600">
                   <CheckCircle2
                     size={18}
-                    className="shrink-0 text-emerald-600"
+                    className="shrink-0 text-yellow-300"
                   />
                   {item}
                 </li>
@@ -736,7 +632,7 @@ export default function HomePage() {
       <section id="contact" className="scroll-mt-24 px-5 py-20 lg:px-10 lg:py-24">
         <div className="mx-auto grid max-w-7xl items-center gap-10 lg:grid-cols-2">
           <div>
-            <span className="text-sm font-bold uppercase tracking-[0.18em] text-emerald-600">
+            <span className="text-sm font-bold uppercase tracking-[0.18em] text-yellow-300">
               Contact us
             </span>
             <h2 className="mt-4 text-3xl font-extrabold leading-tight text-slate-900 sm:text-4xl">

@@ -237,11 +237,14 @@ export default function EditProfilePage() {
                   >
                     {form.profileImage ? (
                       <Image
-                        src={form.profileImage}
-                        alt="Profile"
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
+                          src={form.profileImage}
+                          alt="Profile"
+                          width={112}
+                          height={112}
+                          unoptimized
+                          className="h-full w-full object-cover"
+                          />
+                          ) : (
                       <span className="text-3xl font-bold text-slate-600">
                         {form.firstName[0]}
                         {form.lastName[0]}
@@ -403,14 +406,6 @@ export default function EditProfilePage() {
               </div>
 
               <div className="sticky bottom-0 flex flex-wrap justify-end gap-3 border-t border-slate-200 bg-white px-5 py-4 sm:px-7">
-                {/* <button
-                  type="button"
-                  onClick={() => router.push("/profile")}
-                  className="rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  Cancel
-                </button> */}
-
                 <button
                   type="submit"
                   disabled={!ready}

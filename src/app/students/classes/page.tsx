@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useMemo, useState } from "react";
@@ -210,16 +209,13 @@ export default function ClassesPage() {
           <div className="flex items-start gap-3">
             <button
               onClick={() => router.back()}
-              aria-label="Go back"
-              className="mt-1 rounded-xl border border-slate-200 bg-white p-2.5 hover:bg-slate-50"
+              className="mb-5 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
             >
-              <ArrowLeft size={19} />Back
+              <ArrowLeft size={17} />
+              Back
             </button>
-
             <div>
-              {/* <p className="text-sm font-medium text-amber-700">
-                Student Information 
-              </p> */}
+             
               <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
                 Class & Section
               </h1>

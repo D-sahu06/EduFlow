@@ -121,12 +121,15 @@ export default function AdmissionDashboard() {
         
       {/* Page heading */}
       <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-        
-
         <div>
-          {/* <p className="mb-2 text-sm text-gray-500">
-            EduFlow / Admission
-          </p> */}
+          <button
+           onClick={() => router.back()}
+           className="mb-4 inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:border-yellow-400 hover:bg-yellow-50"
+            >
+           <ArrowLeft size={18} />
+           Back
+          </button>
+         
           <h1 className="text-2xl font-bold text-gray-900 md:text-3xl">
             Admission Dashboard
           </h1>
@@ -143,13 +146,7 @@ export default function AdmissionDashboard() {
           New Admission
         </Link>
       </div>
-      <button
-  onClick={() => router.back()}
-  className="mb-4 inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:border-yellow-400 hover:bg-yellow-50"
->
-  <ArrowLeft size={18} />
-  Back
-</button>
+      
 
       {/* Statistics */}
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">

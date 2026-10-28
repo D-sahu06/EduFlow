@@ -2,6 +2,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   CalendarDays,
   Check,
@@ -11,6 +12,7 @@ import {
   Search,
   Users,
   X,
+  ArrowLeft,
 } from "lucide-react";
 
 type Status = "Present" | "Absent" | "Late" | "On Leave";
@@ -60,6 +62,7 @@ export default function MarkAttendancePage() {
   const [savedRecords, setSavedRecords] = useState<
     { date: string; className: string; section: string; attendance: Record<number, Status> }[]
   >([]);
+  const router = useRouter();
 
   const visibleStudents = useMemo(() => {
     return students.filter((student) => {
@@ -140,9 +143,14 @@ export default function MarkAttendancePage() {
     <main className="min-h-screen bg-gray-50 p-4 md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
         <div>
-          <p className="text-sm text-gray-500">
-            Dashboard / Attendance / Mark Attendance
-          </p>
+          <button
+              onClick={() => router.back()}
+              className="mb-5 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            >
+              <ArrowLeft size={17} />
+              Back
+            </button>
+          
           <h1 className="mt-2 text-2xl font-extrabold text-gray-950 md:text-3xl">
             Mark Attendance
           </h1>

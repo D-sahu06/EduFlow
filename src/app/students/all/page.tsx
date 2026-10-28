@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search, Plus, Pencil, Trash2, Users, X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Search, Plus, Pencil, Trash2, Users, X, ArrowLeft } from "lucide-react";
 
 type Student = {
   id: number;
@@ -53,6 +54,7 @@ const emptyForm = {
 };
 
 export default function AllStudentsPage() {
+  const router = useRouter();
   const [students, setStudents] = useState<Student[]>(initialStudents);
   const [search, setSearch] = useState("");
   const [classFilter, setClassFilter] = useState("All");
@@ -132,9 +134,13 @@ export default function AllStudentsPage() {
       {/* Header */}
       <div className="mb-7 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <p className="mb-1 text-sm text-slate-500">
-            Student Information / All Students
-          </p>
+           <button
+              onClick={() => router.back()}
+              className="mb-5 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            >
+              <ArrowLeft size={17} />
+              Back
+            </button>
           <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">
             All Students
           </h1>
@@ -218,7 +224,7 @@ export default function AllStudentsPage() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[750px] text-left text-sm">
+          <table className="w-full min-w-187.5 text-left text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-500">
               <tr>
                 <th className="px-5 py-4">Student</th>

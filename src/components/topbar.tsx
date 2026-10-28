@@ -265,7 +265,7 @@ export default function Topbar() {
       <aside
   aria-label="Account panel"
   aria-hidden={!accountOpen}
-  className={`fixed right-0 top-0 z-50 flex h-dvh w-full max-w-[420px] flex-col bg-white shadow-2xl transition-transform duration-300 ${
+  className={`fixed right-0 top-0 z-50 flex h-dvh w-full max-w-105 flex-col bg-white shadow-2xl transition-transform duration-300 ${
     accountOpen ? "translate-x-0" : "translate-x-full"
   }`}
 >

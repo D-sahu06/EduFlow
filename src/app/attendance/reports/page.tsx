@@ -2,6 +2,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Download,
   FileBarChart,
@@ -11,6 +12,7 @@ import {
   Clock,
   AlertTriangle,
   Search,
+  ArrowLeft,
 } from "lucide-react";
 
 type ReportRecord = {
@@ -46,6 +48,7 @@ export default function AttendanceReportsPage() {
   const [search, setSearch] = useState("");
   const [startDate, setStartDate] = useState("2026-10-01");
   const [endDate, setEndDate] = useState("2026-10-26");
+  const router = useRouter();
 
   const records = useMemo(() => {
     return demoRecords.filter((record) => {
@@ -157,9 +160,15 @@ export default function AttendanceReportsPage() {
       <div className="mx-auto max-w-7xl space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-sm text-gray-500">
-              Dashboard / Attendance / Reports
-            </p>
+
+            <button
+                    onClick={() => router.back()}
+                    className="mb-5 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                        >
+                     <ArrowLeft size={17} />
+                      Back
+            </button>
+            
             <h1 className="mt-2 text-2xl font-extrabold text-gray-950 md:text-3xl">
               Attendance Reports
             </h1>

@@ -177,9 +177,7 @@ export default function NewAdmissionPage() {
       </button>
 
       <div className="mb-7">
-        <p className="mb-2 text-sm text-gray-500">
-          EduFlow / Admission / New Admission
-        </p>
+       
         <h1 className="text-2xl font-bold text-gray-900 md:text-3xl">
           New Admission
         </h1>

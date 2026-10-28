@@ -2,6 +2,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   CalendarDays,
   Check,
@@ -11,6 +12,7 @@ import {
   ClipboardList,
   CheckCircle2,
   XCircle,
+  ArrowLeft,
 } from "lucide-react";
 
 type LeaveStatus = "Pending" | "Approved" | "Rejected";
@@ -121,6 +123,7 @@ export default function LeaveManagementPage() {
     null
   );
   const [notice, setNotice] = useState("");
+  const router = useRouter();
 
   const filteredRequests = useMemo(() => {
     return requests.filter((request) => {
@@ -163,9 +166,14 @@ export default function LeaveManagementPage() {
     <main className="min-h-screen bg-gray-50 p-4 md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
         <div>
-          <p className="text-sm text-gray-500">
-            Dashboard / Attendance / Leave Management
-          </p>
+          <button
+                  onClick={() => router.back()}
+                  className="mb-5 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                  >
+                  <ArrowLeft size={17} />
+                   Back
+          </button>
+          
           <h1 className="mt-2 text-2xl font-extrabold text-gray-950 md:text-3xl">
             Leave Management
           </h1>
@@ -302,7 +310,7 @@ export default function LeaveManagementPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1000px] text-left text-sm">
+            <table className="w-full min-w-250 text-left text-sm">
               <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                 <tr>
                   <th className="px-5 py-4">Student</th>
@@ -415,7 +423,7 @@ export default function LeaveManagementPage() {
 
         {selectedRequest && (
           <div
-            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4"
+            className="fixed inset-0 z-60 flex items-center justify-center bg-black/40 p-4"
             onClick={() => setSelectedRequest(null)}
           >
             <div

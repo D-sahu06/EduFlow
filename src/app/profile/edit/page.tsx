@@ -236,12 +236,17 @@ export default function EditProfilePage() {
                     className="group relative flex h-28 w-28 cursor-pointer items-center justify-center overflow-hidden rounded-full border-2 border-slate-200 bg-slate-100"
                   >
                     {form.profileImage ? (
-                      <Image
-                        src={form.profileImage}
-                        alt="Profile"
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
+                     
+                 <Image
+                 src={form.profileImage}
+                 alt="Profile"
+                 width={112}
+                 height={112}
+                unoptimized
+                className="h-full w-full object-cover"
+                />
+                 ) 
+                   : (
                       <span className="text-3xl font-bold text-slate-600">
                         {form.firstName[0]}
                         {form.lastName[0]}
@@ -403,18 +408,11 @@ export default function EditProfilePage() {
               </div>
 
               <div className="sticky bottom-0 flex flex-wrap justify-end gap-3 border-t border-slate-200 bg-white px-5 py-4 sm:px-7">
-                {/* <button
-                  type="button"
-                  onClick={() => router.push("/profile")}
-                  className="rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  Cancel
-                </button> */}
-
+              
                 <button
                   type="submit"
                   disabled={!ready}
-                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-green-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50 w-full"
+                  className="inline-flex items-center justify-center gap-2 rounded-lg cursor-pointer bg-yellow-300 px-5 py-2.5 text-sm font-semibold text-white hover:bg-yellow-400 disabled:opacity-50 w-full"
                 >
                   <Save size={17} />
                   Update Account

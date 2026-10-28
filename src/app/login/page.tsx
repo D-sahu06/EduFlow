@@ -361,7 +361,7 @@ export default function LoginPage() {
             Welcome back!
           </h2>
           <p className="mt-2 text-sm text-slate-500">
-            Sign in to your EduFlow account
+            Log in to your EduFlow account
           </p>
         </div>
 
@@ -479,7 +479,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="flex w-full items-center justify-center gap-2 rounded-lg bg-yellow-400 px-4 py-3.5 text-sm font-bold text-slate-900 shadow-sm transition hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-70"
+            className="flex w-full items-center justify-center gap-2 cursor-pointer rounded-lg bg-yellow-400 px-4 py-3.5 text-sm font-bold text-slate-900 shadow-sm transition hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-70"
           >
             {loading ? "Signing in..." : "Log In"}
             {!loading && <ArrowRight size={17} />}
@@ -490,7 +490,7 @@ export default function LoginPage() {
             onClick={() =>
               router.push("/forgot-password")
             }
-            className="w-full cursor-pointer text-center text-sm text-slate-500 transition hover:text-yellow-600 hover:underline"
+            className="w-full cursor-pointer text-center text-sm text-slate-500 transition hover:text-yellow-400 hover:underline"
           >
             Forgot Password?
           </button>
