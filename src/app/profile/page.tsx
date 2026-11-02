@@ -122,7 +122,7 @@ export default function ProfilePage() {
   }
 
   try {
-    const savedProfile = localStorage.getItem("profile");
+    const savedProfile = localStorage.getItem("eduflow-profile");
 
     if (!savedProfile) {
       return defaultProfile;
@@ -309,14 +309,7 @@ export default function ProfilePage() {
                     </h2>
                   </div>
 
-                  {role.toLowerCase() === "administrator" && (
-  <Link
-    href="/profile/add-user"
-    className="shrink-0 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-green-700"
-  >
-    + Add User
-  </Link>
-)}
+                 
 
                   <Link
                     href="/profile/edit"
@@ -573,3 +566,4 @@ export default function ProfilePage() {
     </div>
   );
 }
+

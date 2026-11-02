@@ -43,11 +43,11 @@ export default function CreateAccountPage() {
       <div className="mx-auto max-w-5xl">
         <header className="mb-8">
           <Link
-            href="/admin/users"
-            className="mb-5 inline-flex items-center gap-2 text-sm font-semibold text-gray-500 hover:text-gray-900"
+            href="/admin"
+            className="mb-5 inline-flex items-center gap-2 text-sm font-semibold text-gray-500  p-2 cursor-pointer rounded-lg border hover:border-yellow-300"
           >
             <ArrowLeft size={17} />
-            Back to User Management
+            Back 
           </Link>
 
           <div className="flex items-center gap-3">
@@ -156,7 +156,7 @@ export default function CreateAccountPage() {
                   htmlFor="department"
                   className="mb-2 block text-sm font-semibold"
                 >
-                  Department / Class
+                  Department / Class / Role
                 </label>
                 <div className="flex items-center gap-3 rounded-xl border border-gray-200 px-3 focus-within:border-yellow-400">
                   <BriefcaseBusiness size={18} className="text-gray-400" />

@@ -1,74 +1,3 @@
-
-// "use client";
-
-// import {
-//   Search,
-//   Bell,
-//   ChevronDown,
-//   Sun,
-// } from "lucide-react";
-
-// export default function Topbar() {
-//   return (
-//     <header className="flex min-h-20 flex-wrap items-center justify-between gap-4 border-b border-gray-100 bg-white px-5 py-4 md:px-8 ">
-//       <div>
-//         <h2 className="text-lg font-bold text-gray-900">
-//           Welcome to EduFlow
-//         </h2>
-//         <p className="text-sm text-gray-500">
-//           Education management made simple
-//         </p>
-//       </div>
-
-//       <div className="flex items-center gap-3">
-//         <div className="hidden items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 sm:flex">
-//           <Search size={18} className="text-gray-400" />
-//           <input
-//             type="search"
-//             placeholder="Search anything..."
-//             className="w-40 bg-transparent text-sm text-gray-800 outline-none placeholder:text-gray-400 md:w-52"
-//           />
-//           <kbd className="rounded border border-gray-200 bg-white px-1.5 py-0.5 text-xs text-gray-400">
-//             /
-//           </kbd>
-//         </div>
-
-//         <button
-//           type="button"
-//           aria-label="Light theme"
-//           className="rounded-xl border border-gray-200 p-2.5 text-gray-600 hover:bg-yellow-50"
-//         >
-//           <Sun size={19} />
-//         </button>
-
-//         <button
-//           type="button"
-//           aria-label="Notifications"
-//           className="relative rounded-xl border border-gray-200 p-2.5 text-gray-600 hover:bg-yellow-50"
-//         >
-//           <Bell size={19} />
-//           <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-yellow-400 ring-2 ring-white" />
-//         </button>
-
-//         <div className="flex items-center gap-2 border-l border-gray-200 pl-3">
-//           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-yellow-100 font-bold text-gray-800">
-//             A
-//           </div>
-
-//           <div className="hidden sm:block">
-//             <p className="text-sm font-semibold text-gray-900">
-//               Admin User
-//             </p>
-//             {/* <p className="text-xs text-gray-500">Administrator</p> */}
-//           </div>
-
-//           <ChevronDown size={16} className="hidden text-gray-500 sm:block" />
-//         </div>
-//       </div>
-//     </header>
-//   );
-// }
-
 "use client";
 
 import { useEffect, useState } from "react";
@@ -106,6 +35,7 @@ export default function Topbar() {
   });
 
   const [accountOpen, setAccountOpen] = useState(false);
+  const [role, setRole] = useState("");
 
   useEffect(() => {
     // Read the currently logged-in user's saved data.
@@ -137,7 +67,12 @@ export default function Topbar() {
     user.email ||
     "User";
 
-  const role = user.role || "User";
+  // const role = user.role || "User";
+  // const [role, setRole] = useState("");
+  // const role =
+  // user.role ||
+  // localStorage.getItem("eduflow-demo-role") ||
+  // "User";
   const profileImage = user.profileImage || user.avatar;
 
   const initials = displayName
@@ -156,7 +91,7 @@ export default function Topbar() {
   const handleLogout = () => {
     // Clear demo authentication data.
     [
-      "edunexus-user",
+      "eduflow-user",
       "eduflow-user",
       "currentUser",
       "user",
@@ -167,6 +102,19 @@ export default function Topbar() {
     setAccountOpen(false);
     router.push("/");
   };
+
+  useEffect(() => {
+  const savedRole = localStorage.getItem("eduflow-demo-role");
+
+  if (savedRole) {
+    setRole(savedRole.toUpperCase());
+  } else {
+    setRole(user.role?.toUpperCase() || "");
+  }
+}, [user.role]);
+
+const canCreateUser =
+  role === "ADMIN" || role === "PRINCIPAL";
 
   return (
     <>
@@ -181,6 +129,16 @@ export default function Topbar() {
         </div>
 
         <div className="flex items-center gap-3">
+          {canCreateUser && (
+          <button onClick={()=>{
+              router.push("/admin/users/create")
+             }}
+             className="shrink-0 rounded-lg bg-yellow-300 px-4 py-2.5 text-sm font-bold transition-colors hover:bg-yellow-400 cursor-pointer">
+             
+              Create User
+              </button> 
+              )}
+
           <div className="hidden items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 sm:flex">
             <Search size={18} className="text-gray-400" />
 

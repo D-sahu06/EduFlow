@@ -100,6 +100,7 @@ export default function EditProfilePage() {
   const [form, setForm] = useState<Profile>(defaultProfile);
   const [ready, setReady] = useState(false);
   const [savedMessage, setSavedMessage] = useState("");
+  const [role, setRole] = useState("");
 
   useEffect(() => {
   let cancelled = false;
@@ -109,6 +110,8 @@ export default function EditProfilePage() {
 
     try {
       const saved = localStorage.getItem("eduflow-profile");
+      const savedRole = localStorage.getItem("eduflow-demo-role");
+      setRole(savedRole?.toUpperCase() || "");
 
       if (saved) {
         loadedProfile = {
@@ -185,6 +188,20 @@ export default function EditProfilePage() {
       );
     }
   }
+
+  const canViewAllSections =
+  role === "ADMIN" || role === "PRINCIPAL";
+
+const visibleTabs = canViewAllSections
+  ? tabs
+  : tabs.filter((tab) => tab.id === "personal");
+  
+  useEffect(() => {
+  if (!canViewAllSections) {
+    setActiveTab("personal");
+  }
+}, [canViewAllSections]);
+
 
   const fullName =
     `${form.firstName} ${form.lastName}`.trim() || "Admin User";
@@ -279,7 +296,8 @@ export default function EditProfilePage() {
                 </div>
 
                 <div className="mt-6 grid grid-cols-3 rounded-xl bg-slate-100 p-1">
-                  {tabs.map((tab) => {
+                  {/* {tabs.map((tab) => { */}
+                  {visibleTabs.map((tab) => {
                     const Icon = tab.icon;
                     const selected = activeTab === tab.id;
 
@@ -328,7 +346,8 @@ export default function EditProfilePage() {
                       </>
                     )}
 
-                    {activeTab === "employment" && (
+                    {/* {activeTab === "employment" && ( */}
+                    {canViewAllSections && activeTab === "employment" && (
                       <>
                         
                         <Field label="Date of Joining" name="joiningDate" type="date" value={form.joiningDate} onChange={handleChange} icon={<CalendarDays size={16} />} />
@@ -337,14 +356,15 @@ export default function EditProfilePage() {
                         <SelectField label="Employment Type" name="employmentType" value={form.employmentType} onChange={handleChange} options={["Full Time", "Part Time", "Contract", "Intern"]} />
                         <Field label="Institution" name="institution" value={form.institution} onChange={handleChange} icon={<GraduationCap size={16} />} />
                          { <SelectField label="Employment Type" name="employmentType" value={form.employmentType} onChange={handleChange} options={["Full Time", "Part Time", "Contract", "Intern"]} /> }
-                        <Field label="Manager" name="manager" value={form.manager} onChange={handleChange} /> */
+                        <Field label="Manager" name="manager" value={form.manager} onChange={handleChange} /> 
                         <div className="sm:col-span-2">
                           <Field label="Qualification" name="qualification" value={form.qualification} onChange={handleChange} />
                          </div> 
                       </>
                     )} 
 
-                    {activeTab === "documents" && (
+                    {/* {activeTab === "documents" && ( */}
+                    {canViewAllSections && activeTab === "documents" && (
                       <>
                       
   <Field
