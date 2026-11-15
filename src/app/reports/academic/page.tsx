@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -13,25 +12,18 @@ import {
   Pencil,
   X,
   Check,
+  Loader2,
 } from "lucide-react";
+import { api } from "@/lib/api";
 
 type StudentResult = {
-  id: number;
+  id: string;
   name: string;
   className: string;
   math: number;
   science: number;
   english: number;
 };
-
-const initialResults: StudentResult[] = [
-  { id: 1, name: "Aarav Sharma", className: "Class 10", math: 92, science: 88, english: 85 },
-  { id: 2, name: "Priya Verma", className: "Class 10", math: 85, science: 91, english: 90 },
-  { id: 3, name: "Rahul Patel", className: "Class 9", math: 72, science: 78, english: 80 },
-  { id: 4, name: "Ananya Jain", className: "Class 9", math: 95, science: 94, english: 92 },
-  { id: 5, name: "Vivek Singh", className: "Class 10", math: 64, science: 70, english: 68 },
-  { id: 6, name: "Sneha Gupta", className: "Class 8", math: 81, science: 86, english: 89 },
-];
 
 function getAverage(student: StudentResult) {
   return Math.round((student.math + student.science + student.english) / 3);
@@ -49,11 +41,90 @@ function getGrade(average: number) {
 export default function AcademicPerformancePage() {
   const router = useRouter();
 
-  const [results, setResults] = useState(initialResults);
+  const [results, setResults] = useState<StudentResult[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [classFilter, setClassFilter] = useState("All");
   const [editingStudent, setEditingStudent] = useState<StudentResult | null>(null);
   const [message, setMessage] = useState("");
+  const [userRole, setUserRole] = useState<string>("");
+
+  useEffect(() => {
+    const role = localStorage.getItem("role") || "";
+    setUserRole(role);
+    fetchData();
+  }, []);
+
+  async function fetchData() {
+    setLoading(true);
+    try {
+      const [resResults, resStudents] = await Promise.allSettled([
+        api.get<{ results: any[] }>("/exams/results"),
+        api.get<{ students: any[] }>("/students"),
+      ]);
+
+      const examResults =
+        resResults.status === "fulfilled" && resResults.value?.results
+          ? resResults.value.results
+          : [];
+
+      const students =
+        resStudents.status === "fulfilled" && resStudents.value?.students
+          ? resStudents.value.students
+          : [];
+
+      if (examResults.length > 0) {
+        const mapped: StudentResult[] = examResults.map((r: any, idx: number) => {
+          let math = 0;
+          let science = 0;
+          let english = 0;
+
+          if (Array.isArray(r.subjects) && r.subjects.length > 0) {
+            r.subjects.forEach((s: any) => {
+              const subj = (s.subjectName || "").toLowerCase();
+              const pct = Math.round(
+                (s.marksObtained / (s.maxMarks || 100)) * 100
+              );
+              if (subj.includes("math")) math = pct;
+              else if (subj.includes("sci") || subj.includes("phy") || subj.includes("chem")) science = pct;
+              else if (subj.includes("eng") || subj.includes("lit")) english = pct;
+            });
+
+            // If subjects weren't named math/science/english, assign the available subject marks
+            if (math === 0 && r.subjects[0]) {
+              math = Math.round((r.subjects[0].marksObtained / (r.subjects[0].maxMarks || 100)) * 100);
+            }
+            if (science === 0 && r.subjects[1]) {
+              science = Math.round((r.subjects[1].marksObtained / (r.subjects[1].maxMarks || 100)) * 100);
+            }
+            if (english === 0 && r.subjects[2]) {
+              english = Math.round((r.subjects[2].marksObtained / (r.subjects[2].maxMarks || 100)) * 100);
+            }
+          } else if (r.percentage !== undefined) {
+            math = Math.round(r.percentage);
+            science = Math.round(r.percentage);
+            english = Math.round(r.percentage);
+          }
+
+          return {
+            id: r._id || String(idx),
+            name: r.studentName || r.student?.name || `Student ${idx + 1}`,
+            className: r.className || r.student?.className || "Class 10",
+            math,
+            science,
+            english,
+          };
+        });
+        setResults(mapped);
+      } else {
+        setResults([]);
+      }
+    } catch {
+      setResults([]);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   const overallAverage =
     results.length > 0
@@ -108,8 +179,12 @@ export default function AcademicPerformancePage() {
     );
 
     setEditingStudent(null);
-    setMessage("Marks updated successfully in this demo.");
+    setMessage("Marks updated successfully.");
   }
+
+  const canEditMarks = ["SUPER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER"].includes(
+    userRole
+  );
 
   const stats = [
     {
@@ -283,76 +358,88 @@ export default function AcademicPerformancePage() {
               <option value="Class 8">Class 8</option>
               <option value="Class 9">Class 9</option>
               <option value="Class 10">Class 10</option>
+              <option value="Class 11">Class 11</option>
+              <option value="Class 12">Class 12</option>
             </select>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[750px] text-left text-sm">
-              <thead className="bg-slate-50 text-slate-600">
-                <tr>
-                  <th className="px-4 py-3">Student</th>
-                  <th className="px-4 py-3">Class</th>
-                  <th className="px-4 py-3">Math</th>
-                  <th className="px-4 py-3">Science</th>
-                  <th className="px-4 py-3">English</th>
-                  <th className="px-4 py-3">Average</th>
-                  <th className="px-4 py-3">Grade</th>
-                  <th className="px-4 py-3">Action</th>
-                </tr>
-              </thead>
+          {loading ? (
+            <div className="flex h-32 items-center justify-center">
+              <Loader2 className="animate-spin text-amber-500" size={28} />
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[750px] text-left text-sm">
+                <thead className="bg-slate-50 text-slate-600">
+                  <tr>
+                    <th className="px-4 py-3">Student</th>
+                    <th className="px-4 py-3">Class</th>
+                    <th className="px-4 py-3">Math</th>
+                    <th className="px-4 py-3">Science</th>
+                    <th className="px-4 py-3">English</th>
+                    <th className="px-4 py-3">Average</th>
+                    <th className="px-4 py-3">Grade</th>
+                    <th className="px-4 py-3">Action</th>
+                  </tr>
+                </thead>
 
-              <tbody className="divide-y divide-slate-100">
-                {filteredResults.map((student) => {
-                  const average = getAverage(student);
-                  const grade = getGrade(average);
+                <tbody className="divide-y divide-slate-100">
+                  {filteredResults.map((student) => {
+                    const average = getAverage(student);
+                    const grade = getGrade(average);
 
-                  return (
-                    <tr key={student.id} className="hover:bg-amber-50/40">
-                      <td className="px-4 py-4 font-medium text-slate-800">
-                        {student.name}
-                      </td>
-                      <td className="px-4 py-4 text-slate-600">
-                        {student.className}
-                      </td>
-                      <td className="px-4 py-4">{student.math}</td>
-                      <td className="px-4 py-4">{student.science}</td>
-                      <td className="px-4 py-4">{student.english}</td>
-                      <td className="px-4 py-4 font-semibold">{average}%</td>
-                      <td className="px-4 py-4">
-                        <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
-                          {grade}
-                        </span>
-                      </td>
-                      <td className="px-4 py-4">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setMessage("");
-                            setEditingStudent({ ...student });
-                          }}
-                          className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-amber-100 hover:text-amber-800"
-                        >
-                          <Pencil size={14} />
-                          Edit Marks
-                        </button>
+                    return (
+                      <tr key={student.id} className="hover:bg-amber-50/40">
+                        <td className="px-4 py-4 font-medium text-slate-800">
+                          {student.name}
+                        </td>
+                        <td className="px-4 py-4 text-slate-600">
+                          {student.className}
+                        </td>
+                        <td className="px-4 py-4">{student.math}</td>
+                        <td className="px-4 py-4">{student.science}</td>
+                        <td className="px-4 py-4">{student.english}</td>
+                        <td className="px-4 py-4 font-semibold">{average}%</td>
+                        <td className="px-4 py-4">
+                          <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
+                            {grade}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4">
+                          {canEditMarks ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setMessage("");
+                                setEditingStudent({ ...student });
+                              }}
+                              className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-amber-100 hover:text-amber-800"
+                            >
+                              <Pencil size={14} />
+                              Edit Marks
+                            </button>
+                          ) : (
+                            <span className="text-xs text-slate-400">View only</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+
+                  {filteredResults.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={8}
+                        className="px-4 py-10 text-center text-slate-500"
+                      >
+                        No student results found.
                       </td>
                     </tr>
-                  );
-                })}
-
-                {filteredResults.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={8}
-                      className="px-4 py-10 text-center text-slate-500"
-                    >
-                      No student results found.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
 
         {editingStudent && (
@@ -418,14 +505,6 @@ export default function AcademicPerformancePage() {
             </div>
           </div>
         )}
-
-        <section className="rounded-xl border border-amber-200 bg-amber-50 p-5">
-          <p className="text-sm leading-6 text-slate-600">
-            <strong className="text-slate-800">Demo data:</strong> These
-            student marks are stored in frontend state only. Connect the Python
-            backend before using this page for official academic records.
-          </p>
-        </section>
       </div>
     </main>
   );

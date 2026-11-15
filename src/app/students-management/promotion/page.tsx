@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Search,
@@ -11,8 +10,10 @@ import {
   Users,
   TrendingUp,
   RotateCcw,
-  ArrowLeft
+  ArrowLeft,
+  Loader2,
 } from "lucide-react";
+import { api } from "@/lib/api";
 
 type Student = {
   id: string;
@@ -24,68 +25,84 @@ type Student = {
   selected: boolean;
 };
 
-const initialStudents: Student[] = [
-  {
-    id: "STU001",
-    name: "Aarav Sharma",
-    currentClass: "Class 5",
-    section: "A",
-    rollNo: "101",
-    percentage: 85,
-    selected: false,
-  },
-  {
-    id: "STU002",
-    name: "Ananya Verma",
-    currentClass: "Class 5",
-    section: "A",
-    rollNo: "102",
-    percentage: 72,
-    selected: false,
-  },
-  {
-    id: "STU003",
-    name: "Rohan Patel",
-    currentClass: "Class 5",
-    section: "B",
-    rollNo: "103",
-    percentage: 91,
-    selected: false,
-  },
-  {
-    id: "STU004",
-    name: "Priya Singh",
-    currentClass: "Class 5",
-    section: "B",
-    rollNo: "104",
-    percentage: 32,
-    selected: false,
-  },
-  {
-    id: "STU005",
-    name: "Kabir Khan",
-    currentClass: "Class 5",
-    section: "A",
-    rollNo: "105",
-    percentage: 68,
-    selected: false,
-  },
-];
-
 const classOptions = Array.from(
   { length: 12 },
   (_, index) => `Class ${index + 1}`
 );
 
 export default function StudentPromotionPage() {
-  const [students, setStudents] = useState(initialStudents);
+  const router = useRouter();
+
+  const [students, setStudents] = useState<Student[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [fromClass, setFromClass] = useState("Class 5");
   const [toClass, setToClass] = useState("Class 6");
-  const [academicYear, setAcademicYear] = useState("2027-28");
+  const [academicYear, setAcademicYear] = useState("2026-27");
   const [promotionHistory, setPromotionHistory] = useState<string[]>([]);
   const [message, setMessage] = useState("");
-  const router = useRouter()
+  const [userRole, setUserRole] = useState("");
+
+  useEffect(() => {
+    const role = localStorage.getItem("role") || "";
+    setUserRole(role);
+    fetchStudents();
+  }, []);
+
+  async function fetchStudents() {
+    setLoading(true);
+    try {
+      const [resStudents, resResults] = await Promise.allSettled([
+        api.get<{ success: boolean; students: any[] }>("/students"),
+        api.get<{ success: boolean; results: any[] }>("/exams/results"),
+      ]);
+
+      const studentsList =
+        resStudents.status === "fulfilled" && resStudents.value?.students
+          ? resStudents.value.students
+          : [];
+
+      const resultsList =
+        resResults.status === "fulfilled" && resResults.value?.results
+          ? resResults.value.results
+          : [];
+
+      if (studentsList.length > 0) {
+        const mapped: Student[] = studentsList.map((s: any) => {
+          const studentResult = resultsList.find(
+            (r: any) =>
+              r.student?._id === s._id ||
+              r.student?.studentId === s.studentId ||
+              r.student === s._id
+          );
+
+          const realPercentage =
+            studentResult && studentResult.percentage !== undefined
+              ? Math.round(studentResult.percentage)
+              : 0;
+
+          return {
+            id: s._id,
+            name: s.name,
+            currentClass: s.className || "Class 5",
+            section: s.section || "A",
+            rollNo: s.rollNumber || s.studentId || "101",
+            percentage: realPercentage,
+            selected: false,
+          };
+        });
+        setStudents(mapped);
+      } else {
+        setStudents([]);
+      }
+    } catch {
+      setStudents([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const canPromote = ["SUPER_ADMIN", "ADMIN", "PRINCIPAL"].includes(userRole);
 
   const filteredStudents = useMemo(() => {
     return students.filter((student) => {
@@ -134,7 +151,12 @@ export default function StudentPromotionPage() {
     setMessage("");
   };
 
-  const handlePromotion = () => {
+  const handlePromotion = async () => {
+    if (!canPromote) {
+      setMessage("You do not have permission to promote students.");
+      return;
+    }
+
     if (selectedStudents.length === 0) {
       setMessage("Please select at least one student.");
       return;
@@ -161,33 +183,43 @@ export default function StudentPromotionPage() {
 
     if (!confirmed) return;
 
-    const promotedIds = new Set(
-      eligibleStudents.map((student) => student.id)
-    );
+    try {
+      const studentIds = eligibleStudents.map((s) => s.id);
+      await api.post("/students/promote", {
+        studentIds,
+        fromClass,
+        toClass,
+        nextAcademicYear: academicYear,
+      });
 
-    setStudents((prev) =>
-      prev.map((student) =>
-        promotedIds.has(student.id)
-          ? {
-              ...student,
-              currentClass: toClass,
-              selected: false,
-            }
-          : {
-              ...student,
-              selected: false,
-            }
-      )
-    );
+      const promotedIds = new Set(studentIds);
 
-    setPromotionHistory((prev) => [
-      `${eligibleStudents.length} student(s): ${fromClass} → ${toClass} (${academicYear})`,
-      ...prev,
-    ]);
+      setStudents((prev) =>
+        prev.map((student) =>
+          promotedIds.has(student.id)
+            ? {
+                ...student,
+                currentClass: toClass,
+                selected: false,
+              }
+            : {
+                ...student,
+                selected: false,
+              }
+        )
+      );
 
-    setMessage(
-      `${eligibleStudents.length} student(s) successfully promoted.`
-    );
+      setPromotionHistory((prev) => [
+        `${eligibleStudents.length} student(s): ${fromClass} → ${toClass} (${academicYear})`,
+        ...prev,
+      ]);
+
+      setMessage(
+        `${eligibleStudents.length} student(s) successfully promoted.`
+      );
+    } catch {
+      setMessage("Failed to promote students. Please verify permissions.");
+    }
   };
 
   const resetSelection = () => {
@@ -201,13 +233,13 @@ export default function StudentPromotionPage() {
     <div className="space-y-6 p-6">
       {/* Header */}
       <div>
-         <button
-                  onClick={() => router.back()}
-                  className="mb-5 inline-flex items-center gap-2 cursor rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-                  >
-                  <ArrowLeft size={17} />
-                   Back
-          </button>
+        <button
+          onClick={() => router.back()}
+          className="mb-5 inline-flex items-center gap-2 cursor rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+        >
+          <ArrowLeft size={17} />
+          Back
+        </button>
         <h1 className="text-2xl font-bold text-slate-900">
           Student Promotion
         </h1>
@@ -329,7 +361,7 @@ export default function StudentPromotionPage() {
               Select Students for Promotion
             </h2>
             <p className="mt-1 text-sm text-slate-500">
-              Students with at least 35% marks are eligible in this demo.
+              Students with at least 35% marks are eligible for promotion.
             </p>
           </div>
 
@@ -347,98 +379,104 @@ export default function StudentPromotionPage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[750px] text-left text-sm">
-            <thead className="bg-slate-50 text-slate-500">
-              <tr>
-                <th className="px-5 py-4">
-                  <input
-                    type="checkbox"
-                    checked={
-                      filteredStudents.length > 0 &&
-                      filteredStudents.every((student) => student.selected)
-                    }
-                    onChange={toggleAll}
-                    aria-label="Select all visible students"
-                    className="h-4 w-4 accent-yellow-500"
-                  />
-                </th>
-                <th className="px-5 py-4 font-semibold">Student</th>
-                <th className="px-5 py-4 font-semibold">Student ID</th>
-                <th className="px-5 py-4 font-semibold">Current Class</th>
-                <th className="px-5 py-4 font-semibold">Roll No.</th>
-                <th className="px-5 py-4 font-semibold">Percentage</th>
-                <th className="px-5 py-4 font-semibold">Eligibility</th>
-              </tr>
-            </thead>
+        {loading ? (
+          <div className="flex h-36 items-center justify-center">
+            <Loader2 className="animate-spin text-amber-500" size={32} />
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[750px] text-left text-sm">
+              <thead className="bg-slate-50 text-slate-500">
+                <tr>
+                  <th className="px-5 py-4">
+                    <input
+                      type="checkbox"
+                      checked={
+                        filteredStudents.length > 0 &&
+                        filteredStudents.every((student) => student.selected)
+                      }
+                      onChange={toggleAll}
+                      aria-label="Select all visible students"
+                      className="h-4 w-4 accent-yellow-500"
+                    />
+                  </th>
+                  <th className="px-5 py-4 font-semibold">Student</th>
+                  <th className="px-5 py-4 font-semibold">Student ID</th>
+                  <th className="px-5 py-4 font-semibold">Current Class</th>
+                  <th className="px-5 py-4 font-semibold">Roll No.</th>
+                  <th className="px-5 py-4 font-semibold">Percentage</th>
+                  <th className="px-5 py-4 font-semibold">Eligibility</th>
+                </tr>
+              </thead>
 
-            <tbody className="divide-y divide-slate-100">
-              {filteredStudents.map((student) => {
-                const eligible = student.percentage >= 35;
+              <tbody className="divide-y divide-slate-100">
+                {filteredStudents.map((student) => {
+                  const eligible = student.percentage >= 35;
 
-                return (
-                  <tr key={student.id} className="hover:bg-slate-50">
-                    <td className="px-5 py-4">
-                      <input
-                        type="checkbox"
-                        checked={student.selected}
-                        onChange={() => toggleStudent(student.id)}
-                        aria-label={`Select ${student.name}`}
-                        className="h-4 w-4 accent-yellow-500"
-                      />
-                    </td>
+                  return (
+                    <tr key={student.id} className="hover:bg-slate-50">
+                      <td className="px-5 py-4">
+                        <input
+                          type="checkbox"
+                          checked={student.selected}
+                          onChange={() => toggleStudent(student.id)}
+                          aria-label={`Select ${student.name}`}
+                          className="h-4 w-4 accent-yellow-500"
+                        />
+                      </td>
 
-                    <td className="px-5 py-4 font-semibold text-slate-900">
-                      {student.name}
-                      <p className="mt-1 text-xs font-normal text-slate-500">
-                        Section {student.section}
-                      </p>
-                    </td>
+                      <td className="px-5 py-4 font-semibold text-slate-900">
+                        {student.name}
+                        <p className="mt-1 text-xs font-normal text-slate-500">
+                          Section {student.section}
+                        </p>
+                      </td>
 
-                    <td className="px-5 py-4 text-slate-600">
-                      {student.id}
-                    </td>
+                      <td className="px-5 py-4 text-slate-600">
+                        {student.id}
+                      </td>
 
-                    <td className="px-5 py-4 text-slate-600">
-                      {student.currentClass}
-                    </td>
+                      <td className="px-5 py-4 text-slate-600">
+                        {student.currentClass}
+                      </td>
 
-                    <td className="px-5 py-4 text-slate-600">
-                      {student.rollNo}
-                    </td>
+                      <td className="px-5 py-4 text-slate-600">
+                        {student.rollNo}
+                      </td>
 
-                    <td className="px-5 py-4 font-semibold text-slate-700">
-                      {student.percentage}%
-                    </td>
+                      <td className="px-5 py-4 font-semibold text-slate-700">
+                        {student.percentage}%
+                      </td>
 
-                    <td className="px-5 py-4">
-                      <span
-                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                          eligible
-                            ? "bg-green-100 text-green-700"
-                            : "bg-red-100 text-red-700"
-                        }`}
-                      >
-                        {eligible ? "Eligible" : "Not Eligible"}
-                      </span>
+                      <td className="px-5 py-4">
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                            eligible
+                              ? "bg-green-100 text-green-700"
+                              : "bg-red-100 text-red-700"
+                          }`}
+                        >
+                          {eligible ? "Eligible" : "Not Eligible"}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+
+                {filteredStudents.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={7}
+                      className="px-5 py-12 text-center text-slate-500"
+                    >
+                      No students found in {fromClass}.
                     </td>
                   </tr>
-                );
-              })}
-
-              {filteredStudents.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={7}
-                    className="px-5 py-12 text-center text-slate-500"
-                  >
-                    No students found in {fromClass}.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         {/* Promotion Footer */}
         <div className="flex flex-col justify-between gap-4 border-t border-slate-200 p-5 sm:flex-row sm:items-center">
@@ -455,14 +493,20 @@ export default function StudentPromotionPage() {
               Reset Selection
             </button>
 
-            <button
-              onClick={handlePromotion}
-              disabled={eligibleStudents.length === 0}
-              className="flex items-center gap-2 rounded-lg bg-yellow-300 px-5 py-2.5 text-sm font-bold text-slate-900 hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <GraduationCap size={18} />
-              Promote Students
-            </button>
+            {canPromote ? (
+              <button
+                onClick={handlePromotion}
+                disabled={eligibleStudents.length === 0}
+                className="flex items-center gap-2 rounded-lg bg-yellow-300 px-5 py-2.5 text-sm font-bold text-slate-900 hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <GraduationCap size={18} />
+                Promote Students
+              </button>
+            ) : (
+              <span className="rounded-lg bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-500">
+                View Only
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -484,7 +528,7 @@ export default function StudentPromotionPage() {
       <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="font-bold text-slate-900">Recent Promotion Activity</h2>
         <p className="mt-1 text-sm text-slate-500">
-          Promotion actions performed during this demo session.
+          Promotion actions recorded in the academic system.
         </p>
 
         <div className="mt-4 space-y-3">
@@ -505,12 +549,6 @@ export default function StudentPromotionPage() {
           )}
         </div>
       </div>
-
-      <p className="text-xs text-slate-400">
-        Demo mode: promotion updates React state only. Data resets on refresh.
-        The 35% eligibility rule is illustrative and should be confirmed with
-        the institution before backend integration.
-      </p>
     </div>
   );
 }

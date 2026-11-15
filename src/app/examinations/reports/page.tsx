@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   Download,
@@ -11,11 +10,13 @@ import {
   CheckCircle,
   XCircle,
   TrendingUp,
-  ArrowLeft
+  ArrowLeft,
+  Loader2,
 } from "lucide-react";
+import { api } from "@/lib/api";
 
 type ReportStudent = {
-  id: number;
+  id: string | number;
   name: string;
   rollNo: string;
   className: string;
@@ -24,32 +25,73 @@ type ReportStudent = {
   totalMarks: number;
 };
 
-const reportData: ReportStudent[] = [
-  { id: 1, name: "Aarav Sharma", rollNo: "STU001", className: "Class 10", exam: "Half Yearly", obtainedMarks: 424, totalMarks: 500 },
-  { id: 2, name: "Priya Verma", rollNo: "STU002", className: "Class 10", exam: "Half Yearly", obtainedMarks: 452, totalMarks: 500 },
-  { id: 3, name: "Rahul Patel", rollNo: "STU003", className: "Class 10", exam: "Half Yearly", obtainedMarks: 241, totalMarks: 500 },
-  { id: 4, name: "Ananya Gupta", rollNo: "STU004", className: "Class 10", exam: "Half Yearly", obtainedMarks: 390, totalMarks: 500 },
-  { id: 5, name: "Rohan Jain", rollNo: "STU005", className: "Class 10", exam: "Half Yearly", obtainedMarks: 310, totalMarks: 500 },
-  { id: 6, name: "Neha Singh", rollNo: "STU006", className: "Class 9", exam: "Half Yearly", obtainedMarks: 450, totalMarks: 500 },
-  { id: 7, name: "Karan Mehta", rollNo: "STU007", className: "Class 9", exam: "Half Yearly", obtainedMarks: 280, totalMarks: 500 },
-  { id: 8, name: "Simran Khan", rollNo: "STU008", className: "Class 9", exam: "Final Examination", obtainedMarks: 410, totalMarks: 500 },
-  { id: 9, name: "Aditya Rao", rollNo: "STU009", className: "Class 9", exam: "Final Examination", obtainedMarks: 220, totalMarks: 500 },
-  { id: 10, name: "Ishita Joshi", rollNo: "STU010", className: "Class 10", exam: "Final Examination", obtainedMarks: 460, totalMarks: 500 },
-];
-
 const PASS_MARKS = 35;
 
 export default function ExamReportsPage() {
+  const [reportData, setReportData] = useState<ReportStudent[]>([]);
+  const [examsList, setExamsList] = useState<string[]>([]);
+  const [classList, setClassList] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [selectedExam, setSelectedExam] = useState("All Exams");
   const [selectedClass, setSelectedClass] = useState("All Classes");
   const [resultFilter, setResultFilter] = useState("All");
-  const router = useRouter()
+  const router = useRouter();
+
+  useEffect(() => {
+    async function loadReports() {
+      try {
+        setLoading(true);
+        const [resultsRes, examsRes] = await Promise.allSettled([
+          api.get("/exams/results"),
+          api.get("/exams"),
+        ]);
+
+        let mapped: ReportStudent[] = [];
+        if (resultsRes.status === "fulfilled" && resultsRes.value?.results) {
+          mapped = resultsRes.value.results.map((r: any) => {
+            const total = r.subjects && r.subjects.length > 0
+              ? r.subjects.reduce((sum: number, s: any) => sum + (s.maxMarks || 100), 0)
+              : 100;
+            const obtained = r.totalMarks ?? (r.subjects && r.subjects.length > 0
+              ? r.subjects.reduce((sum: number, s: any) => sum + (s.marksObtained || 0), 0)
+              : 0);
+
+            return {
+              id: r._id || r.id,
+              name: r.student?.name || r.studentName || "Student",
+              rollNo: r.student?.rollNumber || r.rollNumber || "N/A",
+              className: r.className ? (r.className.startsWith("Class") ? r.className : `Class ${r.className}`) : "Class 10",
+              exam: r.exam?.title || r.exam?.name || "Examination",
+              obtainedMarks: obtained,
+              totalMarks: total,
+            };
+          });
+          setReportData(mapped);
+
+          // Unique classes
+          const classes = Array.from(new Set(mapped.map((m) => m.className))).filter(Boolean);
+          setClassList(classes);
+        }
+
+        if (examsRes.status === "fulfilled" && examsRes.value?.exams) {
+          const exams = examsRes.value.exams.map((e: any) => e.title || e.name).filter(Boolean);
+          setExamsList(Array.from(new Set(exams)));
+        }
+      } catch (err) {
+        console.error("Failed to load exam reports:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadReports();
+  }, []);
 
   const filteredData = useMemo(() => {
     return reportData.filter((student) => {
       const percentage =
-        (student.obtainedMarks / student.totalMarks) * 100;
+        student.totalMarks > 0 ? (student.obtainedMarks / student.totalMarks) * 100 : 0;
 
       const passed = percentage >= PASS_MARKS;
 
@@ -76,12 +118,13 @@ export default function ExamReportsPage() {
         matchesResult
       );
     });
-  }, [search, selectedExam, selectedClass, resultFilter]);
+  }, [reportData, search, selectedExam, selectedClass, resultFilter]);
 
   const totalStudents = filteredData.length;
 
   const passedStudents = filteredData.filter(
     (student) =>
+      student.totalMarks > 0 &&
       (student.obtainedMarks / student.totalMarks) * 100 >= PASS_MARKS
   ).length;
 
@@ -96,7 +139,7 @@ export default function ExamReportsPage() {
     totalStudents > 0
       ? filteredData.reduce(
           (sum, student) =>
-            sum + (student.obtainedMarks / student.totalMarks) * 100,
+            sum + (student.totalMarks > 0 ? (student.obtainedMarks / student.totalMarks) * 100 : 0),
           0
         ) / totalStudents
       : 0;
@@ -115,7 +158,7 @@ export default function ExamReportsPage() {
 
     const rows = filteredData.map((student) => {
       const percentage =
-        (student.obtainedMarks / student.totalMarks) * 100;
+        student.totalMarks > 0 ? (student.obtainedMarks / student.totalMarks) * 100 : 0;
 
       return [
         student.name,
@@ -156,12 +199,12 @@ export default function ExamReportsPage() {
       {/* Header */}
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-           <button
-                  onClick={() => router.back()}
-                  className="mb-5 inline-flex items-center cursor-pointer gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-                  >
-                  <ArrowLeft size={17} />
-                   Back
+          <button
+            onClick={() => router.back()}
+            className="mb-5 inline-flex items-center cursor-pointer gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+          >
+            <ArrowLeft size={17} />
+            Back
           </button>
           <h1 className="text-2xl font-bold text-slate-800">
             Exam Reports
@@ -211,8 +254,11 @@ export default function ExamReportsPage() {
             className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-yellow-400"
           >
             <option>All Exams</option>
-            <option>Half Yearly</option>
-            <option>Final Examination</option>
+            {examsList.map((ex) => (
+              <option key={ex} value={ex}>
+                {ex}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -226,8 +272,11 @@ export default function ExamReportsPage() {
             className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-yellow-400"
           >
             <option>All Classes</option>
-            <option>Class 9</option>
-            <option>Class 10</option>
+            {classList.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -251,25 +300,25 @@ export default function ExamReportsPage() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           title="Total Students"
-          value={totalStudents}
+          value={loading ? "..." : totalStudents}
           icon={<Users size={21} />}
           color="bg-blue-50 text-blue-600"
         />
         <StatCard
           title="Students Passed"
-          value={passedStudents}
+          value={loading ? "..." : passedStudents}
           icon={<CheckCircle size={21} />}
           color="bg-green-50 text-green-600"
         />
         <StatCard
           title="Students Failed"
-          value={failedStudents}
+          value={loading ? "..." : failedStudents}
           icon={<XCircle size={21} />}
           color="bg-red-50 text-red-600"
         />
         <StatCard
           title="Pass Percentage"
-          value={`${passPercentage.toFixed(1)}%`}
+          value={loading ? "..." : `${passPercentage.toFixed(1)}%`}
           icon={<TrendingUp size={21} />}
           color="bg-yellow-50 text-yellow-700"
         />
@@ -300,7 +349,7 @@ export default function ExamReportsPage() {
           <div className="mt-5 h-3 overflow-hidden rounded-full bg-slate-100">
             <div
               className="h-full rounded-full bg-yellow-400 transition-all"
-              style={{ width: `${averagePercentage}%` }}
+              style={{ width: `${Math.min(100, Math.max(0, averagePercentage))}%` }}
             />
           </div>
           <p className="mt-2 text-xs text-slate-500">
@@ -388,9 +437,18 @@ export default function ExamReportsPage() {
             </thead>
 
             <tbody>
-              {filteredData.map((student) => {
+              {loading ? (
+                <tr>
+                  <td colSpan={7} className="p-10 text-center text-slate-500">
+                    <Loader2 className="mr-2 inline animate-spin text-yellow-500" size={18} />
+                    Loading exam reports...
+                  </td>
+                </tr>
+              ) : filteredData.map((student) => {
                 const percentage =
-                  (student.obtainedMarks / student.totalMarks) * 100;
+                  student.totalMarks > 0
+                    ? (student.obtainedMarks / student.totalMarks) * 100
+                    : 0;
 
                 const passed = percentage >= PASS_MARKS;
 
@@ -432,7 +490,7 @@ export default function ExamReportsPage() {
                 );
               })}
 
-              {filteredData.length === 0 && (
+              {!loading && filteredData.length === 0 && (
                 <tr>
                   <td
                     colSpan={7}

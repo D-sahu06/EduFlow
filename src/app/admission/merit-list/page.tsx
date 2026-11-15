@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -12,7 +11,9 @@ import {
   CheckCircle2,
   Clock,
   XCircle,
+  Loader2,
 } from "lucide-react";
+import { api } from "@/lib/api";
 
 type MeritStatus = "Selected" | "Waitlisted" | "Rejected";
 
@@ -24,57 +25,6 @@ type Applicant = {
   passingYear: number;
   status: MeritStatus;
 };
-
-const initialApplicants: Applicant[] = [
-  {
-    id: "APP-1002",
-    name: "Priya Verma",
-    course: "B.Tech - CSE",
-    percentage: 94,
-    passingYear: 2026,
-    status: "Selected",
-  },
-  {
-    id: "APP-1005",
-    name: "Vivek Joshi",
-    course: "B.Tech - CSE",
-    percentage: 91,
-    passingYear: 2026,
-    status: "Selected",
-  },
-  {
-    id: "APP-1001",
-    name: "Aarav Sharma",
-    course: "B.Tech - IT",
-    percentage: 88,
-    passingYear: 2026,
-    status: "Selected",
-  },
-  {
-    id: "APP-1006",
-    name: "Neha Gupta",
-    course: "B.Tech - IT",
-    percentage: 84,
-    passingYear: 2026,
-    status: "Waitlisted",
-  },
-  {
-    id: "APP-1003",
-    name: "Rahul Patel",
-    course: "BBA",
-    percentage: 76,
-    passingYear: 2025,
-    status: "Waitlisted",
-  },
-  {
-    id: "APP-1004",
-    name: "Ananya Singh",
-    course: "B.Tech - IT",
-    percentage: 68,
-    passingYear: 2026,
-    status: "Rejected",
-  },
-];
 
 function statusClass(status: MeritStatus) {
   if (status === "Selected") {
@@ -91,13 +41,62 @@ function statusClass(status: MeritStatus) {
 export default function MeritListPage() {
   const router = useRouter();
 
-  const [applicants, setApplicants] =
-    useState<Applicant[]>(initialApplicants);
+  const [applicants, setApplicants] = useState<Applicant[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [userRole, setUserRole] = useState<string>("ADMIN");
+
   const [search, setSearch] = useState("");
   const [courseFilter, setCourseFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
   const [minPercentage, setMinPercentage] = useState("0");
   const [maxPercentage, setMaxPercentage] = useState("100");
+
+  const canManageStatus = ["SUPER_ADMIN", "ADMIN", "PRINCIPAL"].includes(userRole);
+
+  const fetchApplicants = async () => {
+    try {
+      setLoading(true);
+      setError("");
+      const res = await api.get("/admissions/applications");
+      if (res && res.applications) {
+        const mapped: Applicant[] = res.applications.map((app: any) => {
+          let s: MeritStatus = "Waitlisted";
+          if (app.status === "Approved" || app.status === "Merit List") {
+            s = "Selected";
+          } else if (app.status === "Rejected") {
+            s = "Rejected";
+          }
+          return {
+            id: app._id || app.applicationNumber,
+            name: app.applicantName || "Applicant",
+            course: app.applyingForClass || "General",
+            percentage: Number(app.previousPercentage) || 0,
+            passingYear: 2026,
+            status: s,
+          };
+        });
+        setApplicants(mapped);
+      } else {
+        setApplicants([]);
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to load merit list applications.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    try {
+      const userStr = localStorage.getItem("eduflow-user");
+      if (userStr) {
+        const u = JSON.parse(userStr);
+        if (u.role) setUserRole(u.role);
+      }
+    } catch {}
+    fetchApplicants();
+  }, []);
 
   const rankedApplicants = useMemo(() => {
     const sorted = [...applicants].sort(
@@ -160,14 +159,34 @@ export default function MeritListPage() {
     (item) => item.status === "Rejected"
   ).length;
 
-  function updateStatus(id: string, status: MeritStatus) {
-    setApplicants((current) =>
-      current.map((applicant) =>
-        applicant.id === id
-          ? { ...applicant, status }
-          : applicant
-      )
-    );
+  async function updateStatus(id: string, status: MeritStatus) {
+    if (!canManageStatus) {
+      alert("Only Admin and Principal can update merit status.");
+      return;
+    }
+
+    try {
+      const backendStatus =
+        status === "Selected"
+          ? "Approved"
+          : status === "Waitlisted"
+            ? "Under Review"
+            : "Rejected";
+
+      await api.put(`/admissions/applications/${id}/status`, {
+        status: backendStatus,
+      });
+
+      setApplicants((current) =>
+        current.map((applicant) =>
+          applicant.id === id
+            ? { ...applicant, status }
+            : applicant
+        )
+      );
+    } catch (err: any) {
+      alert(err.message || "Failed to update status.");
+    }
   }
 
   function exportCSV() {
@@ -225,9 +244,6 @@ export default function MeritListPage() {
 
       <div className="mb-7 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          {/* <p className="mb-2 text-sm text-gray-500">
-            EduFlow / Admission / Merit List
-          </p> */}
           <h1 className="text-2xl font-bold text-gray-900 md:text-3xl">
             Admission Merit List
           </h1>
@@ -244,6 +260,12 @@ export default function MeritListPage() {
           Export Merit List
         </button>
       </div>
+
+      {error && (
+        <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          {error}
+        </div>
+      )}
 
       {/* Summary cards */}
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -313,7 +335,7 @@ export default function MeritListPage() {
             </div>
             <div>
               <p className="text-sm font-medium text-yellow-900">
-                Highest-scoring applicant in demo data
+                Highest-scoring applicant
               </p>
               <h2 className="mt-1 text-xl font-bold text-gray-900">
                 {topApplicant.name}
@@ -416,12 +438,19 @@ export default function MeritListPage() {
                 <th className="px-4 py-4">Percentage</th>
                 <th className="px-4 py-4">Passing Year</th>
                 <th className="px-4 py-4">Status</th>
-                <th className="px-4 py-4">Update Status</th>
+                {canManageStatus && <th className="px-4 py-4">Update Status</th>}
               </tr>
             </thead>
 
             <tbody>
-              {filteredApplicants.map((applicant) => (
+              {loading ? (
+                <tr>
+                  <td colSpan={canManageStatus ? 7 : 6} className="px-4 py-12 text-center text-sm text-gray-500">
+                    <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin text-yellow-500" />
+                    Loading applicants...
+                  </td>
+                </tr>
+              ) : filteredApplicants.map((applicant) => (
                 <tr
                   key={applicant.id}
                   className="border-b border-gray-50 last:border-0 hover:bg-gray-50"
@@ -481,30 +510,32 @@ export default function MeritListPage() {
                     </span>
                   </td>
 
-                  <td className="px-4 py-4">
-                    <select
-                      aria-label={`Update status for ${applicant.name}`}
-                      value={applicant.status}
-                      onChange={(e) =>
-                        updateStatus(
-                          applicant.id,
-                          e.target.value as MeritStatus
-                        )
-                      }
-                      className="rounded-lg border border-gray-200 px-2 py-2 text-sm outline-none focus:border-yellow-400"
-                    >
-                      <option value="Selected">Selected</option>
-                      <option value="Waitlisted">Waitlisted</option>
-                      <option value="Rejected">Rejected</option>
-                    </select>
-                  </td>
+                  {canManageStatus && (
+                    <td className="px-4 py-4">
+                      <select
+                        aria-label={`Update status for ${applicant.name}`}
+                        value={applicant.status}
+                        onChange={(e) =>
+                          updateStatus(
+                            applicant.id,
+                            e.target.value as MeritStatus
+                          )
+                        }
+                        className="rounded-lg border border-gray-200 px-2 py-2 text-sm outline-none focus:border-yellow-400"
+                      >
+                        <option value="Selected">Selected</option>
+                        <option value="Waitlisted">Waitlisted</option>
+                        <option value="Rejected">Rejected</option>
+                      </select>
+                    </td>
+                  )}
                 </tr>
               ))}
 
-              {filteredApplicants.length === 0 && (
+              {!loading && filteredApplicants.length === 0 && (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={canManageStatus ? 7 : 6}
                     className="px-4 py-12 text-center text-sm text-gray-500"
                   >
                     No applicants match the selected filters.

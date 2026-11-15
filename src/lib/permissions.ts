@@ -32,17 +32,8 @@ const manage = permission([
 
 const DEFAULT_PERMISSIONS: PermissionConfig = {
   SUPER_ADMIN: {
-    dashboard: {
-      overview: manage,
-    },
-    // profile: {
-    //   viewProfile: view,
-    //   editProfile: permission(["view", "edit"], "own"),
-    // },
-     profile: {
-      viewProfile: manage,
-      editProfile: manage,
-    },
+    dashboard: { overview: manage },
+    profile: { viewProfile: manage, editProfile: manage },
     students: {
       studentDashboard: view,
       allStudents: manage,
@@ -50,6 +41,7 @@ const DEFAULT_PERMISSIONS: PermissionConfig = {
       editStudent: manage,
       studentPromotion: manage,
       studentDocuments: manage,
+      classes: manage,
     },
     teachers: {
       teacherDashboard: view,
@@ -74,7 +66,7 @@ const DEFAULT_PERMISSIONS: PermissionConfig = {
       leaveManagement: manage,
     },
     finance: {
-      financeDashboard: permission(["view", "export"]),
+      financeDashboard: manage,
       feesStructure: manage,
       pendingDues: manage,
       receipts: manage,
@@ -98,7 +90,15 @@ const DEFAULT_PERMISSIONS: PermissionConfig = {
       roles: manage,
       permissions: manage,
       userRoleAssignment: manage,
+      resetPassword: manage,
       accessLogs: manage,
+    },
+    reports: {
+      overview: manage,
+      academic: manage,
+      admissions: manage,
+      attendance: manage,
+      fees: manage,
     },
   },
 
@@ -115,6 +115,7 @@ const DEFAULT_PERMISSIONS: PermissionConfig = {
       editStudent: manage,
       studentPromotion: permission(["view", "approve", "edit"]),
       studentDocuments: manage,
+      classes: view,
     },
     teachers: {
       teacherDashboard: view,
@@ -131,10 +132,10 @@ const DEFAULT_PERMISSIONS: PermissionConfig = {
       newAdmission: manage,
       meritList: manage,
     },
-     attendance: {
+    attendance: {
       attendanceDashboard: view,
-      viewAttendance: view,
-      markAttendance: permission(["view", "edit"]),
+      viewAttendance: manage,
+      markAttendance: permission(["view", "create", "edit"]),
       attendanceReports: permission(["view", "export"]),
       leaveManagement: manage,
     },
@@ -162,58 +163,90 @@ const DEFAULT_PERMISSIONS: PermissionConfig = {
     roleManagement: {
       roles: permission(["view"]),
       permissions: permission(["view"]),
-      userRoleAssignment: permission(["view", "create", "edit"]),
+      userRoleAssignment: permission(["view", "create", "edit", "delete"]),
+      resetPassword: permission(["view", "edit"], "institution"),
       accessLogs: permission(["view", "export"]),
+    },
+    reports: {
+      overview: view,
+      academic: permission(["view", "export"]),
+      admissions: permission(["view", "export"]),
+      attendance: permission(["view", "export"]),
+      fees: permission(["view", "export"]),
     },
   },
 
   PRINCIPAL: {
     dashboard: { overview: view },
     profile: {
-      viewProfile: manage,
-      editProfile: manage,
+      viewProfile: ownView,
+      editProfile: permission(["view", "edit"], "own"),
     },
     students: {
       studentDashboard: view,
-      allStudents: view,
-      studentPromotion: permission(["view", "approve"], "institution"),
-      studentDocuments: view,
+      allStudents: manage,
+      createStudent: permission(["view", "create"]),
+      editStudent: permission(["view", "edit"]),
+      studentPromotion: permission(["view", "approve", "edit"], "institution"),
+      studentDocuments: manage,
+      classes: view,
     },
     teachers: {
       teacherDashboard: view,
-      allTeachers: view,
+      allTeachers: manage,
+      createTeacher: permission(["view", "create"]),
+      editTeacher: permission(["view", "edit"]),
+      assignSubjects: permission(["view", "create", "edit"]),
       leaveManagement: permission(["view", "approve"]),
       teacherReports: permission(["view", "export"]),
     },
     admission: {
       admissionDashboard: view,
-      applications: view,
+      applications: permission(["view", "approve", "edit"]),
+      newAdmission: view,
       meritList: permission(["view", "approve"]),
     },
     attendance: {
       attendanceDashboard: view,
-      viewAttendance: view,
+      viewAttendance: manage,
+      markAttendance: permission(["view", "create", "edit"]),
       attendanceReports: permission(["view", "export"]),
       leaveManagement: permission(["view", "approve"]),
     },
     finance: {
       financeDashboard: view,
       feesStructure: view,
+      pendingDues: view,
+      receipts: view,
       financeReports: permission(["view", "export"]),
     },
     communication: {
-      announcements: permission(["view", "create", "edit"]),
-      messages: view,
+      announcements: permission(["view", "create", "edit", "delete"]),
+      messages: permission(["view", "create", "delete"], "institution"),
       notifications: view,
       eventsCalendar: permission(["view", "create", "edit"]),
     },
     examinations: {
       examinationDashboard: view,
-      examManagement: view,
-      resultProcessing: permission(["view", "approve"]),
+      examManagement: manage,
+      resultProcessing: permission(["view", "approve", "edit"]),
       resultDashboard: view,
       reportCard: permission(["view", "export"]),
       examReports: permission(["view", "export"]),
+    },
+    roleManagement: {
+      roles: permission(["view"]),
+      permissions: permission(["view"]),
+      userRoleAssignment: permission(["view", "create", "delete"]),
+      resetPassword: permission(["view", "edit"], "institution"),
+      accessLogs: permission(["view", "export"]),
+    },
+    reports: {
+      overview: view,
+      academic: permission(["view", "export"]),
+      admissions: permission(["view", "export"]),
+      attendance: permission(["view", "export"]),
+      fees: permission(["view", "export"]),
     },
   },
 
@@ -227,6 +260,7 @@ const DEFAULT_PERMISSIONS: PermissionConfig = {
       studentDashboard: departmentView,
       allStudents: departmentView,
       studentDocuments: departmentView,
+      classes: departmentView,
     },
     teachers: {
       teacherDashboard: departmentView,
@@ -266,34 +300,37 @@ const DEFAULT_PERMISSIONS: PermissionConfig = {
     students: {
       studentDashboard: assignedView,
       allStudents: assignedView,
-      studentDocuments: assignedView,
+      studentDocuments: permission(["view", "create", "edit", "approve"], "assigned"),
+      classes: assignedView,
     },
     teachers: {
       teacherDashboard: ownView,
+      allTeachers: permission(["view"], "institution"),
       leaveManagement: ownView,
     },
     attendance: {
-      attendanceDashboard: assignedView,
-      viewAttendance: assignedView,
-      markAttendance: permission(["view", "create", "edit"], "assigned"),
-      attendanceReports: assignedView,
-      leaveManagement: ownView,
+      attendanceDashboard: view,
+      viewAttendance: view,
+      markAttendance: permission(["view", "create", "edit"], "institution"),
+      attendanceReports: view,
+      leaveManagement: permission(["view", "create"], "own"),
     },
     communication: {
       announcements: view,
-      messages: ownView,
+      messages: permission(["view", "create", "delete"], "own"),
       notifications: ownView,
       eventsCalendar: view,
     },
     examinations: {
       examinationDashboard: assignedView,
-      examManagement: assignedView,
+      examManagement: permission(["view", "create", "edit"], "assigned"),
       resultProcessing: permission(["view", "create", "edit"], "assigned"),
       resultDashboard: assignedView,
       reportCard: assignedView,
       examReports: assignedView,
     },
   },
+
   ACCOUNTANT: {
     dashboard: { overview: view },
     profile: {
@@ -302,10 +339,14 @@ const DEFAULT_PERMISSIONS: PermissionConfig = {
     },
     finance: {
       financeDashboard: permission(["view", "export"]),
-      feesStructure: permission(["view", "create", "edit"]),
+      feesStructure: manage,
       pendingDues: permission(["view", "edit", "export"]),
       receipts: permission(["view", "create", "export"]),
       financeReports: permission(["view", "export"]),
+    },
+    attendance: {
+      viewAttendance: ownView,
+      leaveManagement: permission(["view", "create"], "own"),
     },
     communication: {
       announcements: view,
@@ -313,26 +354,33 @@ const DEFAULT_PERMISSIONS: PermissionConfig = {
       notifications: ownView,
       eventsCalendar: view,
     },
+    reports: {
+      overview: view,
+      fees: permission(["view", "export"]),
+    },
   },
 
   STUDENT: {
     dashboard: { overview: ownView },
     profile: {
       viewProfile: ownView,
+      editProfile: permission(["view", "edit"], "own"),
     },
     students: {
       studentDashboard: ownView,
-      studentDocuments: ownView,
+      allStudents: ownView,
+      studentDocuments: permission(["view", "create"], "own"),
+      classes: ownView,
     },
     attendance: {
       attendanceDashboard: ownView,
       viewAttendance: ownView,
+      leaveManagement: permission(["view", "create"], "own"),
     },
     finance: {
-      financeDashboard: ownView,
       pendingDues: ownView,
       receipts: ownView,
-      feesStructure: ownView
+      feesStructure: ownView,
     },
     communication: {
       announcements: view,
@@ -341,6 +389,28 @@ const DEFAULT_PERMISSIONS: PermissionConfig = {
       eventsCalendar: view,
     },
     examinations: {
+      examinationDashboard: ownView,
+      examManagement: ownView,
+      resultDashboard: ownView,
+      reportCard: ownView,
+    },
+  },
+
+  USER: {
+    dashboard: { overview: ownView },
+    profile: {
+      viewProfile: ownView,
+      editProfile: permission(["view", "edit"], "own"),
+    },
+    communication: {
+      announcements: view,
+      messages: ownView,
+      notifications: ownView,
+      eventsCalendar: view,
+    },
+    examinations: {
+      examinationDashboard: ownView,
+      examManagement: ownView,
       resultDashboard: ownView,
       reportCard: ownView,
     },
@@ -351,10 +421,7 @@ export function getRolePermissions(role: Role): RolePermissions {
   return DEFAULT_PERMISSIONS[role] ?? {};
 }
 
-export function hasModuleAccess(
-  role: Role,
-  moduleId: string
-): boolean {
+export function hasModuleAccess(role: Role, moduleId: string): boolean {
   const modulePermissions = getRolePermissions(role)[moduleId];
 
   return (
@@ -364,15 +431,14 @@ export function hasModuleAccess(
     )
   );
 }
+
 export function hasFeatureAccess(
   role: Role,
   moduleId: string,
   featureId: string,
   action: PermissionAction = "view"
 ): boolean {
-  const feature =
-    getRolePermissions(role)[moduleId]?.[featureId];
-
+  const feature = getRolePermissions(role)[moduleId]?.[featureId];
   return feature?.actions.includes(action) ?? false;
 }
 
@@ -381,5 +447,5 @@ export function getFeatureScope(
   moduleId: string,
   featureId: string
 ): DataScope | null {
-  return (
-    getRolePermissions(role)[moduleId]?.[featureId]?.scope ?? null )}
+  return getRolePermissions(role)[moduleId]?.[featureId]?.scope ?? null;
+}

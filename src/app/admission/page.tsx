@@ -1,9 +1,10 @@
-
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
+import { api } from "@/lib/api";
 
 import {
   ClipboardList,
@@ -18,67 +19,23 @@ import {
   TrendingUp,
 } from "lucide-react";
 
-const stats = [
-  {
-    title: "Total Applications",
-    value: "480",
-    subtitle: "Applications received",
-    icon: ClipboardList,
-    color: "bg-blue-100 text-blue-700",
-  },
-  {
-    title: "Pending Review",
-    value: "126",
-    subtitle: "Awaiting verification",
-    icon: Clock,
-    color: "bg-yellow-100 text-yellow-800",
-  },
-  {
-    title: "Approved",
-    value: "245",
-    subtitle: "Applications approved",
-    icon: CheckCircle2,
-    color: "bg-green-100 text-green-700",
-  },
-  {
-    title: "Rejected",
-    value: "109",
-    subtitle: "Applications rejected",
-    icon: XCircle,
-    color: "bg-red-100 text-red-700",
-  },
-];
+type AdmissionStats = {
+  total: number;
+  approved: number;
+  pending: number;
+  rejected: number;
+  decisionsMade: number;
+  approvalRate: string;
+};
 
-const recentApplications = [
-  {
-    id: "APP-1001",
-    name: "Aarav Sharma",
-    course: "B.Tech - IT",
-    date: "26 Oct 2026",
-    status: "Pending",
-  },
-  {
-    id: "APP-1002",
-    name: "Priya Verma",
-    course: "B.Tech - CSE",
-    date: "25 Oct 2026",
-    status: "Approved",
-  },
-  {
-    id: "APP-1003",
-    name: "Rahul Patel",
-    course: "BBA",
-    date: "25 Oct 2026",
-    status: "Pending",
-  },
-  {
-    id: "APP-1004",
-    name: "Ananya Singh",
-    course: "B.Tech - IT",
-    date: "24 Oct 2026",
-    status: "Rejected",
-  },
-];
+type ApplicationRecord = {
+  _id: string;
+  applicationNumber: string;
+  applicantName: string;
+  applyingForClass: string;
+  createdAt?: string;
+  status: string;
+};
 
 const quickActions = [
   {
@@ -113,23 +70,134 @@ function statusStyle(status: string) {
   return "bg-yellow-100 text-yellow-800";
 }
 
+function normalizeAdmissionStats(rawStats: any): AdmissionStats {
+  const approved = Number(rawStats?.approved ?? rawStats?.approvedCount ?? 0) || 0;
+  const rejected = Number(rawStats?.rejected ?? rawStats?.rejectedCount ?? 0) || 0;
+  const pending = Number(rawStats?.pending ?? rawStats?.pendingCount ?? 0) || 0;
+  const total =
+    Number(rawStats?.total ?? rawStats?.totalApplications ?? approved + rejected + pending) || 0;
+  const decisionsMade = Number(rawStats?.decisionsMade ?? approved + rejected) || 0;
+  const approvalRate =
+    typeof rawStats?.approvalRate === "string"
+      ? rawStats.approvalRate
+      : `${total > 0 ? Math.round((approved / total) * 100) : 0}%`;
+
+  return {
+    total,
+    approved,
+    pending,
+    rejected,
+    decisionsMade,
+    approvalRate,
+  };
+}
+
 export default function AdmissionDashboard() {
-    const router = useRouter();
+  const router = useRouter();
+
+  const [stats, setStats] = useState<AdmissionStats | null>(null);
+  const [recentApplications, setRecentApplications] = useState<ApplicationRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const fetchAdmissionData = async () => {
+      try {
+        setLoading(true);
+        setError("");
+        const [statsRes, appsRes] = await Promise.allSettled([
+          api.get("/admissions/stats"),
+          api.get("/admissions/applications?limit=5"),
+        ]);
+
+        if (statsRes.status === "fulfilled" && statsRes.value?.stats) {
+          setStats(normalizeAdmissionStats(statsRes.value.stats));
+        } else if (statsRes.status === "rejected") {
+          setError(statsRes.reason?.message || "Could not load admission statistics.");
+        }
+
+        if (appsRes.status === "fulfilled" && Array.isArray(appsRes.value?.applications)) {
+          setRecentApplications(appsRes.value.applications);
+        }
+      } catch (err: any) {
+        console.warn("Could not load admission data:", err);
+        setError(err?.message || "Could not load admission data.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAdmissionData();
+  }, []);
+
+  const total = stats?.total ?? 0;
+  const approved = stats?.approved ?? 0;
+  const pending = stats?.pending ?? 0;
+  const rejected = stats?.rejected ?? 0;
+  const decisionsMade = stats?.decisionsMade ?? 0;
+
+  const statCards = [
+    {
+      title: "Total Applications",
+      value: loading ? "..." : String(total),
+      subtitle: "Applications received",
+      icon: ClipboardList,
+      color: "bg-blue-100 text-blue-700",
+    },
+    {
+      title: "Pending Review",
+      value: loading ? "..." : String(pending),
+      subtitle: "Awaiting verification",
+      icon: Clock,
+      color: "bg-yellow-100 text-yellow-800",
+    },
+    {
+      title: "Approved",
+      value: loading ? "..." : String(approved),
+      subtitle: "Applications approved",
+      icon: CheckCircle2,
+      color: "bg-green-100 text-green-700",
+    },
+    {
+      title: "Rejected",
+      value: loading ? "..." : String(rejected),
+      subtitle: "Applications rejected",
+      icon: XCircle,
+      color: "bg-red-100 text-red-700",
+    },
+  ];
+
+  const breakdown = [
+    {
+      label: "Approved",
+      value: approved,
+      color: "bg-green-500",
+    },
+    {
+      label: "Pending Review",
+      value: pending,
+      color: "bg-yellow-400",
+    },
+    {
+      label: "Rejected",
+      value: rejected,
+      color: "bg-red-500",
+    },
+  ];
+
   return (
-    
     <main className="min-h-screen bg-gray-50 p-4 md:p-8">
-        
       {/* Page heading */}
       <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <button
-           onClick={() => router.back()}
-           className="mb-4 inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:border-yellow-400 hover:bg-yellow-50"
-            >
-           <ArrowLeft size={18} />
-           Back
+            onClick={() => router.back()}
+            className="mb-4 inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:border-yellow-400 hover:bg-yellow-50 cursor-pointer"
+          >
+            <ArrowLeft size={18} />
+            Back
           </button>
-         
+
           <h1 className="text-2xl font-bold text-gray-900 md:text-3xl">
             Admission Dashboard
           </h1>
@@ -146,11 +214,16 @@ export default function AdmissionDashboard() {
           New Admission
         </Link>
       </div>
-      
+
+      {error && (
+        <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+          {error}
+        </div>
+      )}
 
       {/* Statistics */}
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
-        {stats.map((stat) => {
+        {statCards.map((stat) => {
           const Icon = stat.icon;
 
           return (
@@ -197,44 +270,30 @@ export default function AdmissionDashboard() {
           </div>
 
           <div className="mt-7 space-y-6">
-            {[
-              {
-                label: "Approved",
-                value: 245,
-                color: "bg-green-500",
-              },
-              {
-                label: "Pending Review",
-                value: 126,
-                color: "bg-yellow-400",
-              },
-              {
-                label: "Rejected",
-                value: 109,
-                color: "bg-red-500",
-              },
-            ].map((item) => (
-              <div key={item.label}>
-                <div className="mb-2 flex justify-between text-sm">
-                  <span className="font-medium text-gray-700">
-                    {item.label}
-                  </span>
-                  <span className="font-semibold text-gray-900">
-                    {item.value} (
-                    {Math.round((item.value / 480) * 100)}%)
-                  </span>
-                </div>
+            {breakdown.map((item) => {
+              const pct = total > 0 ? Math.round((item.value / total) * 100) : 0;
+              return (
+                <div key={item.label}>
+                  <div className="mb-2 flex justify-between text-sm">
+                    <span className="font-medium text-gray-700">
+                      {item.label}
+                    </span>
+                    <span className="font-semibold text-gray-900">
+                      {item.value} ({pct}%)
+                    </span>
+                  </div>
 
-                <div className="h-3 overflow-hidden rounded-full bg-gray-100">
-                  <div
-                    className={`h-full rounded-full ${item.color}`}
-                    style={{
-                      width: `${(item.value / 480) * 100}%`,
-                    }}
-                  />
+                  <div className="h-3 overflow-hidden rounded-full bg-gray-100">
+                    <div
+                      className={`h-full rounded-full ${item.color}`}
+                      style={{
+                        width: `${pct}%`,
+                      }}
+                    />
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <div className="mt-7 rounded-xl bg-yellow-50 p-4">
@@ -269,21 +328,21 @@ export default function AdmissionDashboard() {
               <span className="text-sm text-gray-600">
                 Total applicants
               </span>
-              <span className="font-bold text-gray-900">480</span>
+              <span className="font-bold text-gray-900">{total}</span>
             </div>
 
             <div className="flex items-center justify-between border-b border-gray-100 pb-4">
               <span className="text-sm text-gray-600">
                 Decisions made
               </span>
-              <span className="font-bold text-gray-900">354</span>
+              <span className="font-bold text-gray-900">{decisionsMade}</span>
             </div>
 
             <div className="flex items-center justify-between">
               <span className="text-sm text-gray-600">
                 Pending decisions
               </span>
-              <span className="font-bold text-yellow-700">126</span>
+              <span className="font-bold text-yellow-700">{pending}</span>
             </div>
           </div>
 
@@ -343,7 +402,7 @@ export default function AdmissionDashboard() {
               Recent Applications
             </h2>
             <p className="mt-1 text-sm text-gray-500">
-              Latest sample application records
+              Latest applications recorded in MongoDB
             </p>
           </div>
 
@@ -356,49 +415,70 @@ export default function AdmissionDashboard() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-162.5 text-left">
-            <thead>
-              <tr className="border-b border-gray-100 text-xs uppercase tracking-wider text-gray-500">
-                <th className="px-3 py-3 font-semibold">Applicant</th>
-                <th className="px-3 py-3 font-semibold">Course</th>
-                <th className="px-3 py-3 font-semibold">Applied On</th>
-                <th className="px-3 py-3 font-semibold">Status</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {recentApplications.map((application) => (
-                <tr
-                  key={application.id}
-                  className="border-b border-gray-50 last:border-0 hover:bg-gray-50"
-                >
-                  <td className="px-3 py-4">
-                    <p className="font-semibold text-gray-900">
-                      {application.name}
-                    </p>
-                    <p className="mt-1 text-xs text-gray-500">
-                      {application.id}
-                    </p>
-                  </td>
-                  <td className="px-3 py-4 text-sm text-gray-600">
-                    {application.course}
-                  </td>
-                  <td className="px-3 py-4 text-sm text-gray-600">
-                    {application.date}
-                  </td>
-                  <td className="px-3 py-4">
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-semibold ${statusStyle(
-                        application.status
-                      )}`}
-                    >
-                      {application.status}
-                    </span>
-                  </td>
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 py-8 text-sm text-gray-500">
+              <Loader2 className="animate-spin text-yellow-500" size={18} />
+              <span>Loading applications...</span>
+            </div>
+          ) : (
+            <table className="w-full min-w-162.5 text-left">
+              <thead>
+                <tr className="border-b border-gray-100 text-xs uppercase tracking-wider text-gray-500">
+                  <th className="px-3 py-3 font-semibold">Applicant</th>
+                  <th className="px-3 py-3 font-semibold">Course / Class</th>
+                  <th className="px-3 py-3 font-semibold">Applied On</th>
+                  <th className="px-3 py-3 font-semibold">Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+
+              <tbody>
+                {recentApplications.length > 0 ? (
+                  recentApplications.map((application) => (
+                    <tr
+                      key={application._id || application.applicationNumber}
+                      className="border-b border-gray-50 last:border-0 hover:bg-gray-50"
+                    >
+                      <td className="px-3 py-4">
+                        <p className="font-semibold text-gray-900">
+                          {application.applicantName}
+                        </p>
+                        <p className="mt-1 text-xs text-gray-500 font-mono">
+                          {application.applicationNumber}
+                        </p>
+                      </td>
+                      <td className="px-3 py-4 text-sm text-gray-600">
+                        {application.applyingForClass}
+                      </td>
+                      <td className="px-3 py-4 text-sm text-gray-600">
+                        {application.createdAt
+                          ? new Date(application.createdAt).toLocaleDateString("en-IN", {
+                              day: "numeric",
+                              month: "short",
+                              year: "numeric",
+                            })
+                          : "N/A"}
+                      </td>
+                      <td className="px-3 py-4">
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-semibold ${statusStyle(
+                            application.status
+                          )}`}
+                        >
+                          {application.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={4} className="py-8 text-center text-xs text-gray-500">
+                      No admission applications recorded in the database yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
         </div>
       </section>
     </main>

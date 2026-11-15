@@ -1,6 +1,6 @@
-
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -14,74 +14,9 @@ import {
   Clock,
   ArrowLeft,
   Plus,
+  Loader2,
 } from "lucide-react";
-
-const stats = [
-  {
-    title: "Total Teachers",
-    value: "86",
-    description: "Registered teachers",
-    icon: Users,
-  },
-  {
-    title: "Active Teachers",
-    value: "78",
-    description: "Currently working",
-    icon: UserCheck,
-  },
-  {
-    title: "On Leave",
-    value: "05",
-    description: "Currently on leave",
-    icon: CalendarDays,
-  },
-  {
-    title: "Inactive Teachers",
-    value: "03",
-    description: "Not currently active",
-    icon: UserX,
-  },
-];
-
-const departments = [
-  { name: "Computer Science", count: 18 },
-  { name: "Mathematics", count: 14 },
-  { name: "English", count: 12 },
-  { name: "Physics", count: 10 },
-  { name: "Chemistry", count: 9 },
-  { name: "Other Departments", count: 23 },
-];
-
-const teachers = [
-  {
-    name: "Rahul Sharma",
-    email: "rahul@eduflow.com",
-    department: "Computer Science",
-    subjects: "Computer Science",
-    status: "Active",
-  },
-  {
-    name: "Priya Verma",
-    email: "priya@eduflow.com",
-    department: "Mathematics",
-    subjects: "Mathematics",
-    status: "Active",
-  },
-  {
-    name: "Amit Patel",
-    email: "amit@eduflow.com",
-    department: "Physics",
-    subjects: "Physics",
-    status: "On Leave",
-  },
-  {
-    name: "Sneha Gupta",
-    email: "sneha@eduflow.com",
-    department: "English",
-    subjects: "English",
-    status: "Active",
-  },
-];
+import { api } from "@/lib/api";
 
 const quickActions = [
   {
@@ -111,19 +46,114 @@ const quickActions = [
 ];
 
 export default function TeacherDashboard() {
-  const router = useRouter()
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [teachers, setTeachers] = useState<any[]>([]);
+  const [leaves, setLeaves] = useState<any[]>([]);
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        setLoading(true);
+        const [teachersRes, leavesRes] = await Promise.allSettled([
+          api.get("/teachers"),
+          api.get("/attendance/leaves?role=TEACHER"),
+        ]);
+
+        if (teachersRes.status === "fulfilled" && teachersRes.value?.teachers) {
+          setTeachers(teachersRes.value.teachers);
+        } else {
+          setTeachers([]);
+        }
+
+        if (leavesRes.status === "fulfilled" && leavesRes.value?.leaves) {
+          setLeaves(leavesRes.value.leaves);
+        } else {
+          setLeaves([]);
+        }
+      } catch (err) {
+        console.error("Failed to load teacher dashboard data:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadData();
+  }, []);
+
+  const totalTeachers = teachers.length;
+  const activeTeachers = teachers.filter(
+    (t) => (t.status || "Active").toLowerCase() === "active"
+  ).length;
+  const onLeaveTeachers = leaves.filter(
+    (l) => l.status === "APPROVED" || l.status === "Approved"
+  ).length;
+  const inactiveTeachers = teachers.filter(
+    (t) => (t.status || "").toLowerCase() === "inactive"
+  ).length;
+
+  const stats = [
+    {
+      title: "Total Teachers",
+      value: String(totalTeachers),
+      description: "Registered teachers in MongoDB",
+      icon: Users,
+    },
+    {
+      title: "Active Teachers",
+      value: String(activeTeachers),
+      description: "Currently working",
+      icon: UserCheck,
+    },
+    {
+      title: "On Leave",
+      value: String(onLeaveTeachers),
+      description: "Approved leaves",
+      icon: CalendarDays,
+    },
+    {
+      title: "Inactive Teachers",
+      value: String(inactiveTeachers),
+      description: "Not currently active",
+      icon: UserX,
+    },
+  ];
+
+  // Group by department
+  const deptCounts: Record<string, number> = {};
+  teachers.forEach((t) => {
+    const dept = t.department || "General Academics";
+    deptCounts[dept] = (deptCounts[dept] || 0) + 1;
+  });
+
+  const departmentList = Object.entries(deptCounts).map(([name, count]) => ({
+    name,
+    count,
+  }));
+
+  const recentTeachers = teachers.slice(0, 5).map((t) => ({
+    name: t.name,
+    email: t.email,
+    department: t.department || "General Academics",
+    subjects:
+      t.assignedSubjects && t.assignedSubjects.length > 0
+        ? t.assignedSubjects.map((s: any) => s.subjectName || s).join(", ")
+        : (t.subjects && t.subjects.length > 0 ? t.subjects.join(", ") : "Not assigned"),
+    status: (t.status || "Active").toLowerCase() === "active" ? "Active" : "Inactive",
+  }));
+
   return (
     <div className="min-h-screen space-y-6 bg-gray-50 p-4 md:p-6">
 
       {/* Header */}
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-           <button
-                  onClick={() => router.back()}
-                  className="mb-5 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-                  >
-                  <ArrowLeft size={17} />
-                   Back
+          <button
+            onClick={() => router.back()}
+            className="mb-5 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 cursor-pointer"
+          >
+            <ArrowLeft size={17} />
+            Back
           </button>
           <h1 className="text-2xl font-bold text-slate-900">
             Teacher Dashboard
@@ -133,13 +163,13 @@ export default function TeacherDashboard() {
           </p>
         </div>
 
-        <Link
+        {/* <Link
           href="/teacher-management/all-teachers"
           className="inline-flex items-center justify-center gap-2 rounded-lg bg-yellow-300 px-4 py-2.5 text-sm font-bold text-slate-900 transition hover:bg-yellow-400"
         >
           <Plus size={18} />
           Add Teacher
-        </Link>
+        </Link> */}
       </div>
 
       {/* Statistics */}
@@ -158,7 +188,7 @@ export default function TeacherDashboard() {
                     {item.title}
                   </p>
                   <h2 className="mt-2 text-3xl font-bold text-slate-900">
-                    {item.value}
+                    {loading ? <Loader2 className="animate-spin text-yellow-600" size={24} /> : item.value}
                   </h2>
                 </div>
 
@@ -188,27 +218,37 @@ export default function TeacherDashboard() {
           </p>
 
           <div className="mt-6 space-y-5">
-            {departments.map((department) => (
-              <div key={department.name}>
-                <div className="mb-2 flex justify-between text-sm">
-                  <span className="font-medium text-slate-700">
-                    {department.name}
-                  </span>
-                  <span className="font-semibold text-slate-900">
-                    {department.count}
-                  </span>
-                </div>
-
-                <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
-                  <div
-                    className="h-full rounded-full bg-yellow-400"
-                    style={{
-                      width: `${(department.count / 86) * 100}%`,
-                    }}
-                  />
-                </div>
+            {loading ? (
+              <div className="flex items-center justify-center py-8 text-sm text-gray-500">
+                <Loader2 className="mr-2 animate-spin text-yellow-500" size={18} /> Loading departments...
               </div>
-            ))}
+            ) : departmentList.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-gray-200 p-6 text-center text-sm text-gray-500">
+                No department records available.
+              </div>
+            ) : (
+              departmentList.map((department) => (
+                <div key={department.name}>
+                  <div className="mb-2 flex justify-between text-sm">
+                    <span className="font-medium text-slate-700">
+                      {department.name}
+                    </span>
+                    <span className="font-semibold text-slate-900">
+                      {department.count}
+                    </span>
+                  </div>
+
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+                    <div
+                      className="h-full rounded-full bg-yellow-400"
+                      style={{
+                        width: `${totalTeachers > 0 ? (department.count / totalTeachers) * 100 : 0}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
 
@@ -244,41 +284,55 @@ export default function TeacherDashboard() {
               </thead>
 
               <tbody>
-                {teachers.map((teacher) => (
-                  <tr
-                    key={teacher.email}
-                    className="border-b border-gray-50 last:border-0"
-                  >
-                    <td className="py-4">
-                      <p className="text-sm font-semibold text-slate-800">
-                        {teacher.name}
-                      </p>
-                      <p className="mt-1 text-xs text-gray-400">
-                        {teacher.email}
-                      </p>
-                    </td>
-
-                    <td className="py-4 text-sm text-gray-600">
-                      {teacher.department}
-                    </td>
-
-                    <td className="py-4 text-sm text-gray-600">
-                      {teacher.subjects}
-                    </td>
-
-                    <td className="py-4">
-                      <span
-                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                          teacher.status === "Active"
-                            ? "bg-green-50 text-green-700"
-                            : "bg-orange-50 text-orange-700"
-                        }`}
-                      >
-                        {teacher.status}
-                      </span>
+                {loading ? (
+                  <tr>
+                    <td colSpan={4} className="py-8 text-center text-sm text-gray-500">
+                      <Loader2 className="mr-2 inline animate-spin text-yellow-500" size={18} /> Loading teacher records...
                     </td>
                   </tr>
-                ))}
+                ) : recentTeachers.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="py-8 text-center text-sm text-gray-500">
+                      No teacher records found in MongoDB.
+                    </td>
+                  </tr>
+                ) : (
+                  recentTeachers.map((teacher, idx) => (
+                    <tr
+                      key={idx}
+                      className="border-b border-gray-50 last:border-0"
+                    >
+                      <td className="py-4">
+                        <p className="text-sm font-semibold text-slate-800">
+                          {teacher.name}
+                        </p>
+                        <p className="mt-1 text-xs text-gray-400">
+                          {teacher.email}
+                        </p>
+                      </td>
+
+                      <td className="py-4 text-sm text-gray-600">
+                        {teacher.department}
+                      </td>
+
+                      <td className="py-4 text-sm text-gray-600">
+                        {teacher.subjects}
+                      </td>
+
+                      <td className="py-4">
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                            teacher.status === "Active"
+                              ? "bg-green-50 text-green-700"
+                              : "bg-orange-50 text-orange-700"
+                          }`}
+                        >
+                          {teacher.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -329,19 +383,17 @@ export default function TeacherDashboard() {
       </div>
 
       {/* Information */}
-      <div className="flex items-start gap-3 rounded-xl border border-yellow-200 bg-yellow-50 p-4">
+      {/* <div className="flex items-start gap-3 rounded-xl border border-yellow-200 bg-yellow-50 p-4">
         <Clock className="mt-0.5 shrink-0 text-yellow-700" size={20} />
         <div>
           <p className="text-sm font-semibold text-slate-800">
-            Dashboard Information
+            Database Synchronization
           </p>
           <p className="mt-1 text-xs leading-5 text-gray-600">
-            This dashboard currently displays sample data for frontend
-            development. Live teacher records and statistics will be
-            available after backend integration.
+            Teacher management is actively connected to MongoDB. All department counts, assigned subjects, and leave records reflect real-time institutional records.
           </p>
         </div>
-      </div>
+      </div> */}
 
     </div>
   );

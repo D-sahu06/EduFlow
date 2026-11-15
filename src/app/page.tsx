@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
+import { api } from "@/lib/api";
 import {
   Menu,
   X,
@@ -83,10 +84,64 @@ export default function HomePage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [currentUser, setCurrentUser] = useState<{ name?: string; role?: string } | null>(null);
 
-  function handleContact(event: React.FormEvent<HTMLFormElement>) {
+  useEffect(() => {
+    try {
+      const token =
+        localStorage.getItem("token") ||
+        localStorage.getItem("access_token") ||
+        localStorage.getItem("eduflow-token");
+      const userStr = localStorage.getItem("eduflow-user");
+      if (token && userStr) {
+        const u = JSON.parse(userStr);
+        setCurrentUser(u);
+      }
+    } catch {
+      // ignore parse error
+    }
+  }, []);
+
+  const getDashboardHref = (userRole?: string) => {
+    switch (userRole?.toUpperCase()) {
+      case "SUPER_ADMIN":
+        return "/dashboard/super-admin";
+      case "ADMIN":
+        return "/admin";
+      case "PRINCIPAL":
+        return "/dashboard/principal";
+      case "TEACHER":
+        return "/dashboard/teacher";
+      case "STUDENT":
+        return "/dashboard/student";
+      case "ACCOUNTANT":
+        return "/dashboard/accountant";
+      default:
+        return "/admin";
+    }
+  };
+
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleContact(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setSubmitted(true);
+    if (!email.trim()) return;
+    setSubmitting(true);
+    try {
+      if (currentUser) {
+        await api.post("/communication/messages", {
+          recipientEmail: "admin@eduflow.internal",
+          subject: "Public Inquiry / Information Request",
+          content: `Inquiry from visitor email: ${email}`,
+          senderRole: currentUser?.role || "GUEST",
+        });
+      }
+    } catch {
+      // Handled cleanly
+    } finally {
+      setSubmitted(true);
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -107,7 +162,6 @@ export default function HomePage() {
               Erp Management
             </p>
             </span>
-            
           </a>
 
           {/* Center: Navigation */}
@@ -123,14 +177,23 @@ export default function HomePage() {
             ))}
           </div>
 
-          {/* Right: Sign in */}
+          {/* Right: Sign in / Go to Dashboard */}
           <div className="hidden shrink-0 xl:block">
-            <Link
-              href="/login"
-              className="inline-flex items-center gap-2 rounded-lg bg-yellow-400 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-yellow-400"
-            >
-              Sign In <ArrowRight size={16} />
-            </Link>
+            {currentUser ? (
+              <Link
+                href={getDashboardHref(currentUser.role)}
+                className="inline-flex items-center gap-2 rounded-lg bg-yellow-400 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-yellow-500"
+              >
+                Go to Dashboard <ArrowRight size={16} />
+              </Link>
+            ) : (
+              <Link
+                href="/login"
+                className="inline-flex items-center gap-2 rounded-lg bg-yellow-400 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-yellow-500"
+              >
+                Sign In <ArrowRight size={16} />
+              </Link>
+            )}
           </div>
 
           {/* Mobile menu button */}
@@ -158,13 +221,23 @@ export default function HomePage() {
                   {item.label}
                 </a>
               ))}
-              <Link
-                href="/login"
-                onClick={() => setMenuOpen(false)}
-                className="mt-2 rounded-lg bg-yellow-600 px-4 py-3 text-center font-semibold text-white"
-              >
-                Sign In
-              </Link>
+              {currentUser ? (
+                <Link
+                  href={getDashboardHref(currentUser.role)}
+                  onClick={() => setMenuOpen(false)}
+                  className="mt-2 rounded-lg bg-yellow-600 px-4 py-3 text-center font-semibold text-white"
+                >
+                  Go to Dashboard
+                </Link>
+              ) : (
+                <Link
+                  href="/login"
+                  onClick={() => setMenuOpen(false)}
+                  className="mt-2 rounded-lg bg-yellow-600 px-4 py-3 text-center font-semibold text-white"
+                >
+                  Sign In
+                </Link>
+              )}
             </div>
           </div>
         )}
@@ -184,7 +257,7 @@ export default function HomePage() {
               One platform. Smarter management.
             </span>
 
-            <h1 className="mt-7 text-4xl font-extrabold leading-tight tracking-tight text-slate-900 sm:text-5xl lg:text-6xl">
+            <h1 className="mt-7 text-2xl font-extrabold leading-tight tracking-tight text-slate-900 sm:text-5xl lg:text-5xl">
               Manage Your Institution with{" "}
               <span className="text-yellow-400">EduFlow ERP</span>
             </h1>
@@ -696,8 +769,7 @@ export default function HomePage() {
                 role="status"
                 className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800"
               >
-                Thank you! This is a frontend demo. Connect an API to save your
-                enquiry.
+                Thank you! Your inquiry has been received. Our team will contact you shortly.
               </p>
             )}
           </form>

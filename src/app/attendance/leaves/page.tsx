@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   CalendarDays,
@@ -13,12 +12,15 @@ import {
   CheckCircle2,
   XCircle,
   ArrowLeft,
+  Loader2,
+  Plus,
 } from "lucide-react";
+import { api } from "@/lib/api";
 
 type LeaveStatus = "Pending" | "Approved" | "Rejected";
 
 type LeaveRequest = {
-  id: number;
+  id: string | number;
   student: string;
   rollNo: string;
   className: string;
@@ -31,74 +33,6 @@ type LeaveRequest = {
   status: LeaveStatus;
 };
 
-const initialRequests: LeaveRequest[] = [
-  {
-    id: 1,
-    student: "Ananya Verma",
-    rollNo: "STU002",
-    className: "Class 10 - A",
-    leaveType: "Sick Leave",
-    fromDate: "2026-10-27",
-    toDate: "2026-10-28",
-    days: 2,
-    reason: "Not feeling well and need rest.",
-    appliedOn: "2026-10-26",
-    status: "Pending",
-  },
-  {
-    id: 2,
-    student: "Arjun Jain",
-    rollNo: "STU005",
-    className: "Class 9 - B",
-    leaveType: "Personal Leave",
-    fromDate: "2026-10-29",
-    toDate: "2026-10-29",
-    days: 1,
-    reason: "Family function at home.",
-    appliedOn: "2026-10-25",
-    status: "Pending",
-  },
-  {
-    id: 3,
-    student: "Isha Gupta",
-    rollNo: "STU006",
-    className: "Class 9 - A",
-    leaveType: "Medical Leave",
-    fromDate: "2026-10-20",
-    toDate: "2026-10-21",
-    days: 2,
-    reason: "Doctor appointment and recovery.",
-    appliedOn: "2026-10-19",
-    status: "Approved",
-  },
-  {
-    id: 4,
-    student: "Kabir Joshi",
-    rollNo: "STU007",
-    className: "Class 9 - B",
-    leaveType: "Personal Leave",
-    fromDate: "2026-10-22",
-    toDate: "2026-10-22",
-    days: 1,
-    reason: "Personal reasons.",
-    appliedOn: "2026-10-20",
-    status: "Rejected",
-  },
-  {
-    id: 5,
-    student: "Rohan Patel",
-    rollNo: "STU003",
-    className: "Class 10 - B",
-    leaveType: "Sick Leave",
-    fromDate: "2026-10-30",
-    toDate: "2026-10-31",
-    days: 2,
-    reason: "Requested leave due to illness.",
-    appliedOn: "2026-10-26",
-    status: "Pending",
-  },
-];
-
 const statusStyles: Record<LeaveStatus, string> = {
   Pending: "bg-yellow-100 text-yellow-800",
   Approved: "bg-green-100 text-green-700",
@@ -107,7 +41,7 @@ const statusStyles: Record<LeaveStatus, string> = {
 
 function formatDate(value: string) {
   if (!value) return "—";
-  return new Date(`${value}T00:00:00`).toLocaleDateString("en-IN", {
+  return new Date(`${value.slice(0, 10)}T00:00:00`).toLocaleDateString("en-IN", {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -115,7 +49,11 @@ function formatDate(value: string) {
 }
 
 export default function LeaveManagementPage() {
-  const [requests, setRequests] = useState(initialRequests);
+  const [requests, setRequests] = useState<LeaveRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [userRole, setUserRole] = useState<string>("ADMIN");
+
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [typeFilter, setTypeFilter] = useState("All");
@@ -124,6 +62,66 @@ export default function LeaveManagementPage() {
   );
   const [notice, setNotice] = useState("");
   const router = useRouter();
+
+  // Apply Leave Modal State
+  const [showApplyModal, setShowApplyModal] = useState(false);
+  const [applyType, setApplyType] = useState("Casual");
+  const [applyStartDate, setApplyStartDate] = useState("");
+  const [applyEndDate, setApplyEndDate] = useState("");
+  const [applyReason, setApplyReason] = useState("");
+  const [applying, setApplying] = useState(false);
+  const [applyError, setApplyError] = useState("");
+
+  const canApprove = ["SUPER_ADMIN", "ADMIN", "PRINCIPAL"].includes(userRole);
+
+  const fetchLeaves = async () => {
+    try {
+      setLoading(true);
+      setError("");
+      const res = await api.get("/attendance/leaves");
+      if (res && res.leaves) {
+        const mapped: LeaveRequest[] = res.leaves.map((l: any) => {
+          const from = l.startDate ? l.startDate.slice(0, 10) : "";
+          const to = l.endDate ? l.endDate.slice(0, 10) : "";
+          const d1 = new Date(l.startDate || Date.now()).getTime();
+          const d2 = new Date(l.endDate || Date.now()).getTime();
+          const diffDays = Math.max(1, Math.round((d2 - d1) / (1000 * 60 * 60 * 24)) + 1);
+
+          return {
+            id: l._id || l.id,
+            student: l.applicantName || l.user?.name || "Applicant",
+            rollNo: l.user?.email || "User",
+            className: l.department || l.role || "General",
+            leaveType: l.leaveType || "Casual Leave",
+            fromDate: from,
+            toDate: to,
+            days: diffDays,
+            reason: l.reason || "",
+            appliedOn: l.createdAt ? l.createdAt.slice(0, 10) : from,
+            status: l.status || "Pending",
+          };
+        });
+        setRequests(mapped);
+      } else {
+        setRequests([]);
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to load leave requests.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    try {
+      const userStr = localStorage.getItem("eduflow-user");
+      if (userStr) {
+        const u = JSON.parse(userStr);
+        if (u.role) setUserRole(u.role);
+      }
+    } catch {}
+    fetchLeaves();
+  }, []);
 
   const filteredRequests = useMemo(() => {
     return requests.filter((request) => {
@@ -148,39 +146,99 @@ export default function LeaveManagementPage() {
     rejected: requests.filter((r) => r.status === "Rejected").length,
   };
 
-  function updateStatus(id: number, status: LeaveStatus) {
-    setRequests((current) =>
-      current.map((request) =>
-        request.id === id ? { ...request, status } : request
-      )
-    );
+  async function updateStatus(id: string | number, status: LeaveStatus) {
+    if (!canApprove) {
+      alert("Only administrators and principals can approve leaves.");
+      return;
+    }
 
-    setSelectedRequest((current) =>
-      current?.id === id ? { ...current, status } : current
-    );
+    try {
+      await api.put(`/attendance/leaves/${id}/status`, { status });
 
-    setNotice(`Leave request ${status.toLowerCase()} successfully.`);
+      setRequests((current) =>
+        current.map((request) =>
+          request.id === id ? { ...request, status } : request
+        )
+      );
+
+      setSelectedRequest((current) =>
+        current?.id === id ? { ...current, status } : current
+      );
+
+      setNotice(`Leave request ${status.toLowerCase()} successfully.`);
+    } catch (err: any) {
+      alert(err.message || `Failed to update leave status to ${status}.`);
+    }
+  }
+
+  async function handleApplyLeave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!applyStartDate || !applyEndDate || !applyReason.trim()) {
+      setApplyError("Please fill in all required fields.");
+      return;
+    }
+
+    try {
+      setApplying(true);
+      setApplyError("");
+      await api.post("/attendance/leaves", {
+        leaveType: applyType,
+        startDate: applyStartDate,
+        endDate: applyEndDate,
+        reason: applyReason.trim(),
+      });
+
+      setShowApplyModal(false);
+      setApplyStartDate("");
+      setApplyEndDate("");
+      setApplyReason("");
+      setNotice("Leave application submitted successfully in MongoDB!");
+      await fetchLeaves();
+    } catch (err: any) {
+      setApplyError(err.message || "Failed to submit leave application.");
+    } finally {
+      setApplying(false);
+    }
   }
 
   return (
     <main className="min-h-screen bg-gray-50 p-4 md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
-        <div>
+        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+          <div>
+            <button
+              onClick={() => router.back()}
+              className="mb-5 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 cursor-pointer"
+            >
+              <ArrowLeft size={17} />
+              Back
+            </button>
+            
+            <h1 className="mt-2 text-2xl font-extrabold text-gray-950 md:text-3xl">
+              Leave Management
+            </h1>
+            <p className="mt-1 text-sm text-gray-500">
+              Review student leave applications and manage approval status.
+            </p>
+          </div>
+
           <button
-                  onClick={() => router.back()}
-                  className="mb-5 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-                  >
-                  <ArrowLeft size={17} />
-                   Back
+            onClick={() => {
+              setApplyError("");
+              setShowApplyModal(true);
+            }}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-yellow-400 px-5 py-3 text-sm font-semibold text-gray-900 transition hover:bg-yellow-500 cursor-pointer"
+          >
+            <Plus size={18} />
+            Apply for Leave
           </button>
-          
-          <h1 className="mt-2 text-2xl font-extrabold text-gray-950 md:text-3xl">
-            Leave Management
-          </h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Review student leave applications and manage approval status.
-          </p>
         </div>
+
+        {error && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            {error}
+          </div>
+        )}
 
         {notice && (
           <div
@@ -264,7 +322,7 @@ export default function LeaveManagementPage() {
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search student or roll no."
+                placeholder="Search applicant or email..."
                 className="w-full rounded-xl border border-gray-200 py-2.5 pl-10 pr-3 text-sm outline-none focus:border-yellow-400"
               />
             </div>
@@ -289,6 +347,7 @@ export default function LeaveManagementPage() {
               <option value="Sick Leave">Sick Leave</option>
               <option value="Medical Leave">Medical Leave</option>
               <option value="Personal Leave">Personal Leave</option>
+              <option value="Casual">Casual</option>
             </select>
           </div>
         </section>
@@ -313,7 +372,7 @@ export default function LeaveManagementPage() {
             <table className="w-full min-w-250 text-left text-sm">
               <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                 <tr>
-                  <th className="px-5 py-4">Student</th>
+                  <th className="px-5 py-4">Applicant</th>
                   <th className="px-5 py-4">Leave Type</th>
                   <th className="px-5 py-4">Leave Period</th>
                   <th className="px-5 py-4">Days</th>
@@ -324,7 +383,14 @@ export default function LeaveManagementPage() {
               </thead>
 
               <tbody className="divide-y divide-gray-100">
-                {filteredRequests.map((request) => (
+                {loading ? (
+                  <tr>
+                    <td colSpan={7} className="px-5 py-12 text-center text-gray-500">
+                      <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin text-yellow-500" />
+                      Loading leave applications...
+                    </td>
+                  </tr>
+                ) : filteredRequests.map((request) => (
                   <tr
                     key={request.id}
                     className="align-top transition hover:bg-yellow-50/40"
@@ -372,7 +438,7 @@ export default function LeaveManagementPage() {
                     </td>
 
                     <td className="px-5 py-4">
-                      {request.status === "Pending" ? (
+                      {request.status === "Pending" && canApprove ? (
                         <div className="flex flex-col gap-2">
                           <button
                             onClick={() =>
@@ -395,14 +461,14 @@ export default function LeaveManagementPage() {
                         </div>
                       ) : (
                         <span className="text-xs text-gray-400">
-                          Action completed
+                          {request.status === "Pending" ? "Pending review" : "Action completed"}
                         </span>
                       )}
                     </td>
                   </tr>
                 ))}
 
-                {filteredRequests.length === 0 && (
+                {!loading && filteredRequests.length === 0 && (
                   <tr>
                     <td
                       colSpan={7}
@@ -417,7 +483,7 @@ export default function LeaveManagementPage() {
           </div>
 
           <div className="border-t border-gray-100 px-5 py-4 text-xs text-gray-400">
-            Demo implementation · Changes currently remain in page state only.
+            Live attendance register · Connected to EduFlow.
           </div>
         </section>
 
@@ -456,7 +522,7 @@ export default function LeaveManagementPage() {
 
               <div className="space-y-4 text-sm">
                 <div className="flex justify-between gap-4">
-                  <span className="text-gray-500">Class</span>
+                  <span className="text-gray-500">Class / Dept</span>
                   <span className="font-semibold text-gray-900">
                     {selectedRequest.className}
                   </span>
@@ -496,7 +562,7 @@ export default function LeaveManagementPage() {
                 </div>
               </div>
 
-              {selectedRequest.status === "Pending" && (
+              {selectedRequest.status === "Pending" && canApprove && (
                 <div className="mt-6 flex gap-3">
                   <button
                     onClick={() => {
@@ -520,6 +586,115 @@ export default function LeaveManagementPage() {
                   </button>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+        {/* Apply for Leave Modal */}
+        {showApplyModal && (
+          <div
+            className="fixed inset-0 z-60 flex items-center justify-center bg-black/40 p-4"
+            onClick={() => setShowApplyModal(false)}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="mb-5 flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-extrabold text-gray-950">
+                    Apply for Leave
+                  </h2>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Submit a new leave application to the administration.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowApplyModal(false)}
+                  className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {applyError && (
+                <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-600">
+                  {applyError}
+                </div>
+              )}
+
+              <form onSubmit={handleApplyLeave} className="space-y-4 text-sm">
+                <div>
+                  <label className="block font-semibold text-gray-700">Leave Type</label>
+                  <select
+                    value={applyType}
+                    onChange={(e) => setApplyType(e.target.value)}
+                    className="mt-1.5 w-full rounded-xl border border-gray-200 p-2.5 outline-none focus:border-yellow-400"
+                  >
+                    <option value="Casual">Casual Leave</option>
+                    <option value="Medical">Medical Leave</option>
+                    <option value="Academic">Academic Leave</option>
+                    <option value="Maternity">Maternity Leave</option>
+                    <option value="Paternity">Paternity Leave</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-semibold text-gray-700">From Date</label>
+                    <input
+                      type="date"
+                      value={applyStartDate}
+                      onChange={(e) => setApplyStartDate(e.target.value)}
+                      required
+                      className="mt-1.5 w-full rounded-xl border border-gray-200 p-2.5 outline-none focus:border-yellow-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-gray-700">To Date</label>
+                    <input
+                      type="date"
+                      value={applyEndDate}
+                      min={applyStartDate}
+                      onChange={(e) => setApplyEndDate(e.target.value)}
+                      required
+                      className="mt-1.5 w-full rounded-xl border border-gray-200 p-2.5 outline-none focus:border-yellow-400"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-gray-700">Reason</label>
+                  <textarea
+                    value={applyReason}
+                    onChange={(e) => setApplyReason(e.target.value)}
+                    placeholder="State the purpose and reason for this leave request..."
+                    rows={3}
+                    required
+                    className="mt-1.5 w-full rounded-xl border border-gray-200 p-3 outline-none focus:border-yellow-400"
+                  />
+                </div>
+
+                <div className="mt-6 flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowApplyModal(false)}
+                    className="flex-1 rounded-xl border border-gray-200 py-2.5 font-semibold text-gray-700 hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={applying}
+                    className="flex-1 rounded-xl bg-yellow-400 py-2.5 font-bold text-gray-950 hover:bg-yellow-300 disabled:opacity-50"
+                  >
+                    {applying ? "Submitting..." : "Submit Application"}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}

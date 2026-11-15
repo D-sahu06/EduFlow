@@ -1,30 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { MOCK_USERS } from "@/lib/mock-users";
+import Link from "next/link";
 import {
   Eye,
-  EyeOff,
+  // EyeOff,
   Building2,
-  ShieldCheck,
   ArrowRight,
   UserRound,
 } from "lucide-react";
 
-type UserRole = "admin" | "student" | "teacher" | "accountant";
-
-type SavedUser = {
-  id?: string;
-  firstName?: string;
-  lastName?: string;
-  fullName?: string;
-  username?: string;
-  email?: string;
-  password?: string;
-  role?: string;
-  status?: string;
-};
+type UserRole = "admin" | "principal" | "student" | "teacher" | "accountant";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -35,118 +22,96 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [existingUser, setExistingUser] = useState<{ name?: string; role?: string } | null>(null);
 
-  function handleLogin(event: React.FormEvent<HTMLFormElement>) {
+  useEffect(() => {
+    try {
+      const token =
+        localStorage.getItem("token") ||
+        localStorage.getItem("access_token") ||
+        localStorage.getItem("eduflow-token");
+      const userStr = localStorage.getItem("eduflow-user");
+      if (token && userStr) {
+        const u = JSON.parse(userStr);
+        setExistingUser(u);
+      }
+    } catch {
+      // ignore parse error
+    }
+  }, []);
+
+  const getDashboardRoute = (userRole: string) => {
+    switch (userRole.toUpperCase()) {
+      case "SUPER_ADMIN":
+        return "/dashboard/super-admin";
+      case "PRINCIPAL":
+        return "/dashboard/principal";
+      case "TEACHER":
+        return "/dashboard/teacher";
+      case "STUDENT":
+        return "/dashboard/student";
+      case "ACCOUNTANT":
+        return "/dashboard/accountant";
+      case "USER":
+        return "/examinations";
+      case "ADMIN":
+      default:
+        return "/admin";
+    }
+  };
+
+  async function handleLogin(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
+
+    if (!username.trim() || !password) {
+      setError("Please enter both username/email and password.");
+      return;
+    }
+
     setLoading(true);
 
     try {
-      const enteredUsername = username.trim().toLowerCase();
-
-      // Admin demo login
-      if (role === "admin") {
-        if (
-          enteredUsername === "admin" &&
-          password === "Admin@123"
-        ) {
-          const adminUser = {
-            username: "admin",
-            fullName: "Principal",
-            role: "admin",
-          };
-
-          localStorage.setItem("eduflow-demo-auth", "true");
-          localStorage.setItem("eduflow-demo-role", "ADMIN");
-
-          localStorage.setItem(
-            "eduflow-user",
-            JSON.stringify(adminUser)
-          );
-
-          router.replace("/admin");
-          return;
-        }
-
-        setError("Invalid admin username or password.");
-        setLoading(false);
-        return;
-      }
-
-      // Student and teacher login:
-      // These accounts must already exist in eduflow-users.
-      const savedUsers = localStorage.getItem("eduflow-users");
-
-const parsedUsers: SavedUser[] = savedUsers
-  ? JSON.parse(savedUsers)
-  : [];
-
-const users: SavedUser[] = [
-  ...parsedUsers.filter((user) => user.password),
-  ...MOCK_USERS,
-];
-
-      const matchedUser = users.find((user) => {
-        const userRole = String(user.role ?? "").toLowerCase();
-
-        const matchesRole = userRole === role;
-        const matchesUsername =
-          String(user.username ?? "").trim().toLowerCase() ===
-            enteredUsername ||
-          String(user.email ?? "").trim().toLowerCase() ===
-            enteredUsername;
-
-        const matchesPassword = user.password === password;
-        const isActive =
-          !user.status ||
-          ["active", "approved"].includes(
-            String(user.status).toLowerCase()
-          );
-
-        return (
-          matchesRole &&
-          matchesUsername &&
-          matchesPassword &&
-          isActive
-        );
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+      const response = await fetch(`${apiUrl}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: username.trim(),
+          password,
+          role,
+        }),
       });
 
-      if (!matchedUser) {
-        setError(
-          `Invalid ${role} credentials, or this account has not been created by the admin.`
-        );
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        setError(data.message || "Invalid username or password.");
         setLoading(false);
         return;
       }
 
-      const loggedInUser = {
-        ...matchedUser,
-        role,
-      };
+      const token = data.token;
+      const user = data.user;
 
-      // Save the logged-in user's details for the UI.
-      localStorage.setItem(
-        "eduflow-user",
-        JSON.stringify(loggedInUser)
-      );
+      // Real persistent backend authentication
+      localStorage.setItem("token", token);
+      localStorage.setItem("access_token", token);
+      localStorage.setItem("eduflow-token", token);
+      localStorage.setItem("eduflow-user", JSON.stringify(user));
+      localStorage.setItem("eduflow-role", user.role?.toUpperCase() || "ADMIN");
 
-      localStorage.setItem("eduflow-demo-auth", "true");
+      // Set cookie for Next.js SSR / route guard
+      document.cookie = `token=${token}; path=/; max-age=604800; SameSite=Lax`;
+      document.cookie = `auth-token=${token}; path=/; max-age=604800; SameSite=Lax`;
 
-      // Send users to their respective dashboards.
-      if (role === "student") {
-  localStorage.setItem("eduflow-demo-role", "STUDENT");
-  router.replace("/students/all");
-} else if (role === "teacher") {
-  localStorage.setItem("eduflow-demo-role", "TEACHER");
-  router.replace("/teacher");
-} else if (role === "accountant") {
-  localStorage.setItem("eduflow-demo-role", "ACCOUNTANT");
-  router.replace("/admin");
-}
-    } catch {
-      setError(
-        "Unable to sign in. Please check your saved account data."
-      );
+      window.dispatchEvent(new Event("eduflow-user-change"));
+
+      const targetRoute = getDashboardRoute(user.role || "");
+      router.replace(targetRoute);
+    } catch (err: any) {
+      console.error("Login request error:", err);
+      setError("Unable to connect to authentication server. Please ensure the backend is running.");
       setLoading(false);
     }
   }
@@ -191,6 +156,20 @@ const users: SavedUser[] = [
           </p>
         </div>
 
+        {existingUser && (
+          <div className="mt-6 rounded-xl border border-yellow-200 bg-yellow-50/80 p-4 text-center">
+            <p className="text-xs text-slate-600">
+              You are currently signed in as <strong className="font-semibold text-slate-900">{existingUser.name || "User"}</strong> ({existingUser.role}).
+            </p>
+            <Link
+              href={getDashboardRoute(existingUser.role || "ADMIN")}
+              className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg bg-yellow-400 px-4 py-2 text-xs font-bold text-slate-900 transition hover:bg-yellow-500"
+            >
+              Continue to Dashboard <ArrowRight size={14} />
+            </Link>
+          </div>
+        )}
+
         <form onSubmit={handleLogin} className="mt-8 space-y-5">
           {/* Role selector */}
           <div>
@@ -217,19 +196,25 @@ const users: SavedUser[] = [
                 }}
                 className="w-full appearance-none rounded-lg border border-slate-200 bg-white px-10 py-3 text-sm font-medium text-slate-900 outline-none transition focus:border-yellow-400 focus:ring-4 focus:ring-yellow-100"
               >
-                <option value="admin">Principal</option>
+                <option value="admin">Admin</option>
+                <option value="principal">Principal</option>
                 <option value="student">Student</option>
                 <option value="teacher">Teacher</option>
                 <option value="accountant">Accountant</option>
+                {/* <option value="user">User</option> */}
               </select>
             </div>
 
             <p className="mt-2 text-xs text-slate-500">
               {role === "admin"
                 ? "Manage users and the ERP system."
+                : role === "principal"
+                ? "Sign in to view your principal dashboard."
                 : role === "student"
                 ? "Sign in to view your student dashboard."
-                : "Sign in to view your teacher dashboard."}
+                : role === "teacher"
+                ? "Sign in to view your teacher dashboard."
+                : "Sign in to manage fees and financial records."}
             </p>
           </div>
 
@@ -277,7 +262,7 @@ const users: SavedUser[] = [
                 className="w-full rounded-lg border border-slate-200 bg-white px-4 py-3 pr-12 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-yellow-400 focus:ring-4 focus:ring-yellow-100"
               />
 
-              <button
+              {/* <button
                 type="button"
                 aria-label={
                   showPassword ? "Hide password" : "Show password"
@@ -286,11 +271,11 @@ const users: SavedUser[] = [
                 className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-500 transition hover:text-slate-900"
               >
                 {showPassword ? (
-                  <EyeOff size={19} />
+                  <Eye size={19} />
                 ) : (
                   <Eye size={19} />
                 )}
-              </button>
+              </button> */}
             </div>
           </div>
 
@@ -312,7 +297,7 @@ const users: SavedUser[] = [
             {!loading && <ArrowRight size={17} />}
           </button>
 
-          <button
+          {/* <button
             type="button"
             onClick={() =>
               router.push("/forgot-password")
@@ -320,47 +305,8 @@ const users: SavedUser[] = [
             className="w-full cursor-pointer text-center text-sm text-slate-500 transition hover:text-yellow-400 hover:underline"
           >
             Forgot Password?
-          </button>
+          </button> */}
         </form>
-
-        {/* Demo credentials: admin only */}
-        {role === "admin" && (
-          <div className="mt-6 rounded-xl border border-yellow-200 bg-yellow-50 p-4">
-            <div className="flex items-center gap-2">
-              <ShieldCheck size={19} className="text-yellow-700" />
-              <p className="text-sm font-bold text-slate-800">
-                Demo Admin Login
-              </p>
-            </div>
-
-            <div className="mt-3 space-y-2 text-sm text-slate-600">
-              <p>
-                Username:{" "}
-                <span className="font-semibold text-slate-900">
-                  admin
-                </span>
-              </p>
-              <p>
-                Password:{" "}
-                <span className="font-semibold text-slate-900">
-                  Admin@123
-                </span>
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                setUsername("admin");
-                setPassword("Admin@123");
-                setError("");
-              }}
-              className="mt-3 text-sm font-bold text-yellow-800 underline decoration-yellow-400 underline-offset-4 hover:text-slate-900"
-            >
-              Use demo credentials
-            </button>
-          </div>
-        )}
 
         <p className="mt-7 text-center text-xs leading-5 text-slate-400">
           Authorized access only. Contact your administrator if you need
@@ -370,4 +316,3 @@ const users: SavedUser[] = [
     </main>
   );
 }
-

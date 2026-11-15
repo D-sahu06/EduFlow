@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -13,55 +12,62 @@ import {
   X,
   MessageSquare,
   Eye,
+  Loader2,
 } from "lucide-react";
+import { api } from "@/lib/api";
+
+type RecipientTargetRole =
+  | "INDIVIDUAL"
+  | "ALL"
+  | "STUDENT"
+  | "TEACHER"
+  | "ACCOUNTANT"
+  | "HOD";
+
+type RecipientOption = {
+  _id?: string;
+  name: string;
+  email: string;
+  role: string;
+  department?: string;
+};
 
 type Message = {
-  id: number;
+  id: string | number;
+  senderId?: string;
   recipient: string;
   email: string;
+  recipientRole?: RecipientTargetRole;
+  senderName?: string;
+  senderRole?: string;
   subject: string;
   content: string;
   date: string;
   status: "Sent" | "Draft";
 };
 
-const initialMessages: Message[] = [
-  {
-    id: 1,
-    recipient: "Aarav Sharma",
-    email: "aarav@example.com",
-    subject: "Assignment Submission Reminder",
-    content:
-      "Please submit your pending assignments before the due date.",
-    date: "2026-10-24",
-    status: "Sent",
-  },
-  {
-    id: 2,
-    recipient: "Ananya Verma",
-    email: "ananya@example.com",
-    subject: "Parent-Teacher Meeting",
-    content:
-      "This is a reminder about the upcoming parent-teacher meeting.",
-    date: "2026-10-23",
-    status: "Sent",
-  },
-  {
-    id: 3,
-    recipient: "Rahul Patel",
-    email: "rahul@example.com",
-    subject: "Fee Payment Reminder",
-    content:
-      "Please contact the school office regarding your pending fee.",
-    date: "2026-10-22",
-    status: "Draft",
-  },
-];
+const TARGET_LABELS: Record<RecipientTargetRole, string> = {
+  ALL: "All Users (Teachers, Students & Accountants)",
+  TEACHER: "All Teachers",
+  STUDENT: "All Students",
+  ACCOUNTANT: "All Accountants",
+  HOD: "All HODs",
+  INDIVIDUAL: "Specific Recipient",
+};
 
 export default function MessagesPage() {
   const router = useRouter();
 
-  const [messages, setMessages] = useState<Message[]>(initialMessages);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [recipients, setRecipients] = useState<RecipientOption[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const [formError, setFormError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [userRole, setUserRole] = useState<string>("STUDENT");
+  const [currentUserId, setCurrentUserId] = useState<string>("");
+
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("All");
   const [showForm, setShowForm] = useState(false);
@@ -69,11 +75,112 @@ export default function MessagesPage() {
     useState<Message | null>(null);
 
   const [form, setForm] = useState({
+    recipientRole: "ALL" as RecipientTargetRole,
+    recipientUserId: "",
     recipient: "",
     email: "",
     subject: "",
     content: "",
   });
+
+  const canCompose = ["SUPER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER"].includes(userRole);
+
+  const canDeleteMessage = (message: Message) => {
+    if (["SUPER_ADMIN", "ADMIN", "PRINCIPAL"].includes(userRole)) return true;
+    return (
+      userRole === "TEACHER" &&
+      Boolean(currentUserId) &&
+      message.senderId === currentUserId
+    );
+  };
+
+  const fetchMessages = async () => {
+    try {
+      setLoading(true);
+      setError("");
+      const res = await api.get<{ success?: boolean; messages?: any[] }>("/communication/messages");
+      if (res && res.messages) {
+        setMessages(
+          res.messages.map((m: any) => ({
+            id: m._id || m.id,
+            senderId: m.sender ? String(m.sender) : "",
+            recipient: m.recipient,
+            email: m.recipientEmail || m.email || "",
+            recipientRole: m.recipientRole || "INDIVIDUAL",
+            senderName: m.senderName,
+            senderRole: m.senderRole || "",
+            subject: m.subject,
+            content: m.content,
+            date: m.createdAt ? m.createdAt.slice(0, 10) : new Date().toISOString().slice(0, 10),
+            status: m.status || "Sent",
+          }))
+        );
+      } else {
+        setMessages([]);
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to load messages from server.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchRecipients = async () => {
+    try {
+      const res = await api.get<{ success?: boolean; recipients?: RecipientOption[] }>(
+        "/communication/messages/recipients"
+      );
+      if (res && Array.isArray(res.recipients)) {
+        setRecipients(res.recipients);
+      }
+    } catch {
+      // Optional directory assist; manual entry remains available
+    }
+  };
+
+  useEffect(() => {
+    let resolvedRole = "";
+    try {
+      const userStr = localStorage.getItem("eduflow-user");
+      if (userStr) {
+        const u = JSON.parse(userStr);
+        if (u?._id || u?.id) setCurrentUserId(String(u._id || u.id));
+        if (u?.role) resolvedRole = String(u.role).toUpperCase();
+      }
+      if (!resolvedRole) {
+        const fallbackRole =
+          localStorage.getItem("eduflow-role") || localStorage.getItem("role") || "";
+        if (fallbackRole) resolvedRole = fallbackRole.toUpperCase();
+      }
+      if (resolvedRole) {
+        setUserRole(resolvedRole);
+        setForm((prev) => ({
+          ...prev,
+          recipientRole: resolvedRole === "TEACHER" ? "STUDENT" : "ALL",
+        }));
+      }
+    } catch {}
+    fetchMessages();
+    if (["SUPER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER"].includes(resolvedRole)) {
+      fetchRecipients();
+    }
+  }, []);
+
+  const openComposeModal = () => {
+    setFormError("");
+    setForm({
+      recipientRole: userRole === "TEACHER" ? "STUDENT" : "ALL",
+      recipientUserId: "",
+      recipient: "",
+      email: "",
+      subject: "",
+      content: "",
+    });
+    setShowForm(true);
+    if (recipients.length === 0) {
+      fetchRecipients();
+    }
+  };
 
   const filteredMessages = messages.filter((message) => {
     const query = search.toLowerCase();
@@ -82,6 +189,8 @@ export default function MessagesPage() {
       message.recipient,
       message.email,
       message.subject,
+      message.content,
+      message.senderName || "",
     ].some((value) => value.toLowerCase().includes(query));
 
     const matchesFilter =
@@ -90,35 +199,68 @@ export default function MessagesPage() {
     return matchesSearch && matchesFilter;
   });
 
-  const handleSend = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSend = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setFormError("");
+    setNotice("");
 
-    const newMessage: Message = {
-      id: Date.now(),
-      ...form,
-      date: new Date().toISOString().slice(0, 10),
-      status: "Sent",
-    };
+    if (!canCompose) {
+      setFormError("Only Admin, Principal, and Teachers can compose messages.");
+      return;
+    }
 
-    setMessages((current) => [newMessage, ...current]);
-    setForm({
-      recipient: "",
-      email: "",
-      subject: "",
-      content: "",
-    });
-    setShowForm(false);
+    if (form.recipientRole === "INDIVIDUAL" && !form.email.trim() && !form.recipientUserId) {
+      setFormError("Please select a recipient or enter a recipient email.");
+      return;
+    }
+
+    try {
+      setSending(true);
+      await api.post("/communication/messages", {
+        recipientRole: form.recipientRole,
+        recipientUserId: form.recipientUserId || undefined,
+        recipient:
+          form.recipientRole === "INDIVIDUAL"
+            ? form.recipient.trim()
+            : TARGET_LABELS[form.recipientRole],
+        recipientEmail:
+          form.recipientRole === "INDIVIDUAL"
+            ? form.email.trim().toLowerCase()
+            : "",
+        subject: form.subject.trim(),
+        content: form.content.trim(),
+        status: "Sent",
+      });
+
+      setForm({
+        recipientRole: userRole === "TEACHER" ? "STUDENT" : "ALL",
+        recipientUserId: "",
+        recipient: "",
+        email: "",
+        subject: "",
+        content: "",
+      });
+      setShowForm(false);
+      setNotice("Message sent successfully.");
+      await fetchMessages();
+    } catch (err: any) {
+      setFormError(err.message || "Failed to send message.");
+    } finally {
+      setSending(false);
+    }
   };
 
-  const handleDelete = (id: number) => {
-    if (window.confirm("Delete this message?")) {
-      setMessages((current) =>
-        current.filter((message) => message.id !== id)
-      );
+  const handleDelete = async (id: string | number) => {
+    if (!window.confirm("Delete this message?")) return;
 
+    try {
+      await api.delete(`/communication/messages/${id}`);
+      await fetchMessages();
       if (selectedMessage?.id === id) {
         setSelectedMessage(null);
       }
+    } catch (err: any) {
+      alert(err.message || "Failed to delete message.");
     }
   };
 
@@ -137,9 +279,6 @@ export default function MessagesPage() {
       {/* Header */}
       <div className="mb-7 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          {/* <p className="mb-1 text-sm text-slate-500">
-            Communication / Messages
-          </p> */}
           <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">
             Messages
           </h1>
@@ -148,23 +287,44 @@ export default function MessagesPage() {
           </p>
         </div>
 
-        <button
-          onClick={() => setShowForm(true)}
-          className="flex items-center justify-center gap-2 rounded-xl bg-amber-400 px-5 py-3 font-semibold text-slate-900 hover:bg-amber-500"
-        >
-          <Plus size={19} />
-          Compose Message
-        </button>
+        {canCompose && (
+          <button
+            onClick={openComposeModal}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-400 px-5 py-3 text-sm font-bold text-slate-900 hover:bg-amber-300 cursor-pointer"
+          >
+            <Plus size={18} />
+            Compose Message
+          </button>
+        )}
       </div>
 
-      {/* Stats */}
+      {notice && (
+        <div className="mb-5 flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
+          <span>{notice}</span>
+          <button
+            type="button"
+            onClick={() => setNotice("")}
+            aria-label="Dismiss notice"
+            className="rounded p-1 hover:bg-emerald-100"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
+      {error && (
+        <div className="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      {/* Summary cards */}
       <div className="mb-6 grid gap-4 sm:grid-cols-3">
         <div className="rounded-2xl border border-slate-200 bg-white p-5">
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-slate-500">Total Messages</p>
-            <MessageSquare className="text-amber-600" size={22} />
-          </div>
-          <p className="mt-3 text-3xl font-bold">{messages.length}</p>
+          <p className="text-sm text-slate-500">Total Messages</p>
+          <p className="mt-3 text-3xl font-bold text-slate-900">
+            {messages.length}
+          </p>
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-5">
@@ -217,68 +377,79 @@ export default function MessagesPage() {
           </span>
         </div>
 
-        <div className="divide-y divide-slate-100">
-          {filteredMessages.map((message) => (
-            <div
-              key={message.id}
-              className="flex flex-col gap-4 p-5 transition hover:bg-amber-50/30 sm:flex-row sm:items-center"
-            >
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
-                <Mail size={21} />
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="font-semibold text-slate-900">
-                    {message.subject}
-                  </h3>
-                  <span
-                    className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                      message.status === "Sent"
-                        ? "bg-emerald-100 text-emerald-700"
-                        : "bg-amber-100 text-amber-700"
-                    }`}
-                  >
-                    {message.status}
-                  </span>
+        {loading ? (
+          <div className="flex items-center justify-center p-12 text-slate-500">
+            <Loader2 className="mr-2 h-5 w-5 animate-spin text-amber-500" />
+            Loading messages...
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {filteredMessages.map((message) => (
+              <div
+                key={message.id}
+                className="flex flex-col gap-4 p-5 transition hover:bg-amber-50/30 sm:flex-row sm:items-center"
+              >
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+                  <Mail size={21} />
                 </div>
 
-                <p className="mt-1 text-sm text-slate-600">
-                  To: {message.recipient} ({message.email})
-                </p>
-                <p className="mt-1 line-clamp-2 text-sm text-slate-500">
-                  {message.content}
-                </p>
-                <p className="mt-2 text-xs text-slate-400">
-                  {message.date}
-                </p>
-              </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="font-semibold text-slate-900">
+                      {message.subject}
+                    </h3>
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                        message.status === "Sent"
+                          ? "bg-emerald-100 text-emerald-700"
+                          : "bg-amber-100 text-amber-700"
+                      }`}
+                    >
+                      {message.status}
+                    </span>
+                  </div>
 
-              <div className="flex shrink-0 gap-2">
-                <button
-                  onClick={() => setSelectedMessage(message)}
-                  title="View message"
-                  className="rounded-lg border border-slate-200 p-2.5 hover:bg-amber-50 hover:text-amber-700"
-                >
-                  <Eye size={17} />
-                </button>
-                <button
-                  onClick={() => handleDelete(message.id)}
-                  title="Delete message"
-                  className="rounded-lg border border-slate-200 p-2.5 text-red-600 hover:bg-red-50"
-                >
-                  <Trash2 size={17} />
-                </button>
-              </div>
-            </div>
-          ))}
+                  <p className="mt-1 text-sm text-slate-600">
+                    {message.senderName ? `From: ${message.senderName} · ` : ""}
+                    To: {message.recipient}
+                    {message.email ? ` (${message.email})` : ""}
+                  </p>
+                  <p className="mt-1 line-clamp-2 text-sm text-slate-500">
+                    {message.content}
+                  </p>
+                  <p className="mt-2 text-xs text-slate-400">
+                    {message.date}
+                  </p>
+                </div>
 
-          {filteredMessages.length === 0 && (
-            <div className="p-12 text-center text-sm text-slate-500">
-              No messages found.
-            </div>
-          )}
-        </div>
+                <div className="flex shrink-0 gap-2">
+                  <button
+                    onClick={() => setSelectedMessage(message)}
+                    title="View message"
+                    className="rounded-lg border border-slate-200 p-2.5 hover:bg-amber-50 hover:text-amber-700"
+                  >
+                    <Eye size={17} />
+                  </button>
+                  {canDeleteMessage(message) && (
+                    <button
+                      onClick={() => handleDelete(message.id)}
+                      title="Delete message"
+                      className="rounded-lg border border-slate-200 p-2.5 text-red-600 hover:bg-red-50"
+                    >
+                      <Trash2 size={17} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+
+            {filteredMessages.length === 0 && (
+              <div className="p-12 text-center text-sm text-slate-500">
+                No messages found.
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Compose modal */}
@@ -306,34 +477,119 @@ export default function MessagesPage() {
             <form onSubmit={handleSend} className="space-y-4 p-5">
               <div>
                 <label className="mb-1.5 block text-sm font-medium">
-                  Recipient Name
+                  Send To
                 </label>
-                <input
-                  required
-                  value={form.recipient}
-                  onChange={(e) =>
-                    setForm({ ...form, recipient: e.target.value })
-                  }
-                  placeholder="Enter recipient name"
-                  className="w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-amber-400"
-                />
+                <select
+                  value={form.recipientRole}
+                  onChange={(e) => {
+                    const nextRole = e.target.value as RecipientTargetRole;
+                    setForm({
+                      ...form,
+                      recipientRole: nextRole,
+                      recipientUserId: "",
+                      recipient: "",
+                      email: "",
+                    });
+                  }}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 outline-none focus:border-amber-400"
+                >
+                  {userRole === "TEACHER" ? (
+                    <>
+                      <option value="STUDENT">All Students</option>
+                      <option value="INDIVIDUAL">Specific Student</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="ALL">All Users (Teachers, Students &amp; Accountants)</option>
+                      <option value="TEACHER">All Teachers</option>
+                      <option value="STUDENT">All Students</option>
+                      <option value="ACCOUNTANT">All Accountants</option>
+                      <option value="HOD">All HODs</option>
+                      <option value="INDIVIDUAL">Specific User / Email</option>
+                    </>
+                  )}
+                </select>
               </div>
 
-              <div>
-                <label className="mb-1.5 block text-sm font-medium">
-                  Recipient Email
-                </label>
-                <input
-                  required
-                  type="email"
-                  value={form.email}
-                  onChange={(e) =>
-                    setForm({ ...form, email: e.target.value })
-                  }
-                  placeholder="recipient@example.com"
-                  className="w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-amber-400"
-                />
-              </div>
+              {form.recipientRole === "INDIVIDUAL" && (
+                <>
+                  {recipients.length > 0 && (
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium">
+                        {userRole === "TEACHER" ? "Select Student (Optional)" : "Select Recipient (Optional)"}
+                      </label>
+                      <select
+                        value={form.email}
+                        onChange={(e) => {
+                          const selected = recipients.find(
+                            (r) => r.email === e.target.value
+                          );
+                          if (selected) {
+                            setForm({
+                              ...form,
+                              recipientUserId: selected._id ? String(selected._id) : "",
+                              recipient: selected.name,
+                              email: selected.email,
+                            });
+                          } else {
+                            setForm({
+                              ...form,
+                              recipientUserId: "",
+                            });
+                          }
+                        }}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 outline-none focus:border-amber-400"
+                      >
+                        <option value="">-- Type manually below or pick from list --</option>
+                        {recipients.map((r) => (
+                          <option key={r.email} value={r.email}>
+                            {r.name} ({r.role.replace("_", " ")} · {r.email})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium">
+                      Recipient Name
+                    </label>
+                    <input
+                      required
+                      value={form.recipient}
+                      onChange={(e) =>
+                        setForm({ ...form, recipient: e.target.value })
+                      }
+                      placeholder={
+                        userRole === "TEACHER"
+                          ? "Enter student name"
+                          : "Enter recipient name"
+                      }
+                      className="w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-amber-400"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium">
+                      Recipient Email
+                    </label>
+                    <input
+                      required
+                      type="email"
+                      value={form.email}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          recipientUserId: "",
+                          email: e.target.value,
+                        })
+                      }
+                      placeholder="recipient@example.com"
+                      className="w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-amber-400"
+                    />
+                  </div>
+                </>
+              )}
 
               <div>
                 <label className="mb-1.5 block text-sm font-medium">
@@ -366,6 +622,12 @@ export default function MessagesPage() {
                 />
               </div>
 
+              {formError && (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-sm text-red-700">
+                  {formError}
+                </div>
+              )}
+
               <div className="flex justify-end gap-3 border-t border-slate-100 pt-4">
                 <button
                   type="button"
@@ -376,10 +638,11 @@ export default function MessagesPage() {
                 </button>
                 <button
                   type="submit"
-                  className="flex items-center gap-2 rounded-xl bg-amber-400 px-5 py-2.5 font-semibold text-slate-900 hover:bg-amber-500"
+                  disabled={sending}
+                  className="flex items-center gap-2 rounded-xl bg-amber-400 px-5 py-2.5 font-semibold text-slate-900 hover:bg-amber-500 disabled:opacity-60 cursor-pointer"
                 >
                   <Send size={17} />
-                  Save Message
+                  {sending ? "Sending..." : "Send Message"}
                 </button>
               </div>
             </form>
@@ -411,6 +674,12 @@ export default function MessagesPage() {
                   {selectedMessage.subject}
                 </p>
               </div>
+              {selectedMessage.senderName && (
+                <div>
+                  <p className="text-xs text-slate-500">Sender</p>
+                  <p className="mt-1 font-medium">{selectedMessage.senderName}</p>
+                </div>
+              )}
               <div>
                 <p className="text-xs text-slate-500">Recipient</p>
                 <p className="mt-1">{selectedMessage.recipient}</p>

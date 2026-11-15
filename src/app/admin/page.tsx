@@ -4,6 +4,9 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/sidebar";
+import { api } from "@/lib/api";
+import { useUnreadNotifications } from "@/lib/notifications";
+import { useSidebar } from "@/lib/sidebar";
 
 import {
   Users,
@@ -40,36 +43,6 @@ type LoggedInUser = {
   avatar?: string;
 };
 
-const stats = [
-  {
-    title: "Total Students",
-    value: "1,248",
-    detail: "Registered students",
-    icon: GraduationCap,
-    href: "/students-management",
-  },
-  {
-    title: "Total Teachers",
-    value: "86",
-    detail: "Teaching staff",
-    icon: Users,
-    href: "/teacher-management",
-  },
-  {
-    title: "Total finance",
-    value: "42",
-    detail: "Institution finance",
-    icon: UserRoundCheck,
-    href: "/fees",
-  },
-  {
-    title: "Fee Collection",
-    value: "₹8.4L",
-    detail: "Sample collection",
-    icon: Wallet,
-    href: "/fees",
-  },
-];
 
 const modules = [
   {
@@ -184,6 +157,7 @@ function getDisplayName(user: LoggedInUser | null) {
 
 export default function AdminDashboard() {
   const router = useRouter();
+  const { unreadCount } = useUnreadNotifications();
 
   const [user, setUser] = useState<LoggedInUser | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -230,14 +204,81 @@ export default function AdminDashboard() {
   );
 
   const [role, setRole] = useState("");
+  const [loading, setLoading] = useState(true);
+  const { sidebarOpen, toggleSidebar } = useSidebar();
+  const [overview, setOverview] = useState<{
+    totalStudents: number;
+    totalTeachers: number;
+    totalUsers: number;
+    totalRevenue: string;
+    pendingDues: string;
+    averageAttendance: string;
+  } | null>(null);
 
-useEffect(() => {
-  const savedRole = localStorage.getItem("eduflow-demo-role");
-  setRole(savedRole || "");
-}, []);
+  useEffect(() => {
+    const fetchOverview = async () => {
+      try {
+        setLoading(true);
+        const res = await api.get("/reports/overview");
+        if (res && res.overview) {
+          setOverview(res.overview);
+        }
+      } catch (err) {
+        console.warn("Could not fetch overview from MongoDB:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchOverview();
+  }, []);
+
+  useEffect(() => {
+    if (user?.role) {
+      setRole(user.role);
+    } else {
+      try {
+        const stored = localStorage.getItem("eduflow-user");
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed?.role) setRole(parsed.role);
+        }
+      } catch {}
+    }
+  }, [user]);
+
+  const dashboardStats = [
+    {
+      title: "Total Students",
+      value: loading ? "..." : String(overview?.totalStudents ?? 0),
+      detail: "Registered in MongoDB",
+      icon: GraduationCap,
+      href: "/students-management/all",
+    },
+    {
+      title: "Total Teachers",
+      value: loading ? "..." : String(overview?.totalTeachers ?? 0),
+      detail: "Teaching staff in DB",
+      icon: Users,
+      href: "/teacher-management/all-teachers",
+    },
+    {
+      title: "Total Accounts",
+      value: loading ? "..." : String(overview?.totalUsers ?? 0),
+      detail: "Authenticated users",
+      icon: UserRoundCheck,
+      href: "/admin/users",
+    },
+    {
+      title: "Fee Collections",
+      value: loading ? "..." : (overview?.totalRevenue || "₹0"),
+      detail: "Live revenue summary",
+      icon: Wallet,
+      href: "/fees",
+    },
+  ];
 
   const canCreateUser =
-  role === "ADMIN" || role === "PRINCIPAL";
+  role === "SUPER_ADMIN" || role === "ADMIN" || role === "PRINCIPAL";
 
   
 
@@ -245,20 +286,48 @@ useEffect(() => {
     <div className="min-h-screen overflow-x-hidden bg-gray-50 text-gray-900">
       <Sidebar />
 
-      <main className="min-h-screen min-w-0 px-4 pb-8 pt-20 sm:px-6 md:ml-64 md:pt-6 lg:px-9">
+      <main
+        data-sidebar-content="true"
+        className={`min-h-screen min-w-0 px-5 pb-12 pt-6 md:px-8 transition-all duration-300 ease-in-out ${
+          sidebarOpen ? "md:ml-64" : "ml-0 md:ml-0 w-full"
+        }`}
+      >
         {/* Dashboard header */}
         <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            
+          <div className="flex items-center gap-3.5">
+            <button
+              type="button"
+              onClick={toggleSidebar}
+              aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+              title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-800 shadow-xs transition hover:border-yellow-400 hover:bg-yellow-50 hover:text-gray-950 active:scale-95 cursor-pointer dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-yellow-400 dark:hover:bg-gray-700"
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <line x1="10" y1="6" x2="21" y2="6" />
+                <line x1="4" y1="12" x2="21" y2="12" />
+                <line x1="7" y1="18" x2="18" y2="18" />
+              </svg>
+            </button>
 
-            <h1 className="mt-1 text-2xl font-extrabold sm:text-3xl">
-              Dashboard 
-            </h1>
+            <div>
+              <h1 className="mt-1 text-2xl font-extrabold sm:text-3xl">
+                Dashboard 
+              </h1>
 
-            <p className="mt-2 flex items-center gap-2 text-sm text-gray-500">
-              <CalendarDays size={16} />
-              {today}
-            </p>
+              <p className="mt-2 flex items-center gap-2 text-sm text-gray-500">
+                <CalendarDays size={16} />
+                {today}
+              </p>
+            </div>
           </div>
 
           <div className="flex items-center gap-3">
@@ -286,11 +355,20 @@ useEffect(() => {
 
             <button
               type="button"
-              aria-label="Notifications"
-              className="relative rounded-xl border border-gray-200 bg-white p-3 transition hover:bg-yellow-50"
-              onClick={() => router.push("/notifications")}
+              aria-label={
+                unreadCount > 0
+                  ? `Notifications (${unreadCount} unread)`
+                  : "Notifications"
+              }
+              className="relative rounded-xl border border-gray-200 bg-white p-3 transition hover:bg-yellow-50 cursor-pointer"
+              onClick={() => router.push("/communication/notification")}
             >
               <Bell size={19} />
+              {unreadCount > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-yellow-400 px-1 text-[10px] font-bold leading-none text-slate-900 ring-2 ring-white">
+                  {unreadCount > 99 ? "99+" : unreadCount}
+                </span>
+              )}
             </button>
 
             {/* Profile dropdown */}
@@ -418,13 +496,13 @@ useEffect(() => {
                 A quick overview of institution records
               </p>
             </div>
-            <span className="rounded-lg bg-yellow-100 px-3 py-1.5 text-xs font-semibold text-yellow-900">
-              Preview data
+            <span className="rounded-lg bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-800">
+              Live MongoDB Data
             </span>
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {stats.map((stat) => {
+            {dashboardStats.map((stat) => {
               const Icon = stat.icon;
 
               return (

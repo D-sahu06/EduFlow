@@ -1,11 +1,9 @@
-
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Download,
-  FileBarChart,
   Users,
   CheckCircle2,
   XCircle,
@@ -13,10 +11,12 @@ import {
   AlertTriangle,
   Search,
   ArrowLeft,
+  Loader2,
 } from "lucide-react";
+import { api } from "@/lib/api";
 
 type ReportRecord = {
-  id: number;
+  id: string;
   name: string;
   rollNo: string;
   className: string;
@@ -28,50 +28,108 @@ type ReportRecord = {
   leave: number;
 };
 
-const demoRecords: ReportRecord[] = [
-  { id: 1, name: "Aarav Sharma", rollNo: "STU001", className: "Class 10", section: "A", total: 20, present: 19, absent: 1, late: 0, leave: 0 },
-  { id: 2, name: "Ananya Verma", rollNo: "STU002", className: "Class 10", section: "A", total: 20, present: 15, absent: 4, late: 1, leave: 0 },
-  { id: 3, name: "Rohan Patel", rollNo: "STU003", className: "Class 10", section: "B", total: 20, present: 17, absent: 2, late: 1, leave: 0 },
-  { id: 4, name: "Priya Singh", rollNo: "STU004", className: "Class 9", section: "A", total: 20, present: 20, absent: 0, late: 0, leave: 0 },
-  { id: 5, name: "Arjun Jain", rollNo: "STU005", className: "Class 9", section: "B", total: 20, present: 13, absent: 5, late: 1, leave: 1 },
-  { id: 6, name: "Isha Gupta", rollNo: "STU006", className: "Class 9", section: "A", total: 20, present: 18, absent: 1, late: 1, leave: 0 },
-  { id: 7, name: "Kabir Joshi", rollNo: "STU007", className: "Class 9", section: "B", total: 20, present: 16, absent: 3, late: 0, leave: 1 },
-];
-
 function percentage(record: ReportRecord) {
   if (record.total === 0) return 0;
   return Math.round((record.present / record.total) * 100);
 }
 
 export default function AttendanceReportsPage() {
-  const [classFilter, setClassFilter] = useState("All");
-  const [search, setSearch] = useState("");
-  const [startDate, setStartDate] = useState("2026-10-01");
-  const [endDate, setEndDate] = useState("2026-10-26");
   const router = useRouter();
 
-  const records = useMemo(() => {
-    return demoRecords.filter((record) => {
+  const [records, setRecords] = useState<ReportRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [classFilter, setClassFilter] = useState("");
+  const [search, setSearch] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+
+  const loadAttendanceReports = async () => {
+    try {
+      setLoading(true);
+      const res = await api.get<{ success?: boolean; records?: any[] }>("/attendance");
+      if (res && res.records) {
+        const studentAgg: Record<string, ReportRecord> = {};
+
+        res.records.forEach((r: any) => {
+          const sName = r.studentName || r.student?.name || "";
+          const sRoll = r.rollNumber || r.student?.rollNumber || r.student?.studentId || "—";
+          const sClass = r.className || r.student?.className || "—";
+          const sSection = r.section || r.student?.section || "—";
+          const sId =
+            r.student?._id ||
+            (typeof r.student === "string" ? r.student : "") ||
+            `${sClass.toLowerCase()}|${sSection.toLowerCase()}|${sRoll.toLowerCase()}|${sName.toLowerCase()}`;
+          if (!sId || !sName) return;
+
+          if (!studentAgg[sId]) {
+            studentAgg[sId] = {
+              id: sId,
+              name: sName,
+              rollNo: sRoll,
+              className: sClass,
+              section: sSection,
+              total: 0,
+              present: 0,
+              absent: 0,
+              late: 0,
+              leave: 0,
+            };
+          }
+
+          // Check date filter if provided
+          if (startDate && r.date && r.date.slice(0, 10) < startDate) return;
+          if (endDate && r.date && r.date.slice(0, 10) > endDate) return;
+
+          studentAgg[sId].total += 1;
+          const status = (r.status || "").toLowerCase();
+          if (status === "present") studentAgg[sId].present += 1;
+          else if (status === "absent") studentAgg[sId].absent += 1;
+          else if (status === "late") studentAgg[sId].late += 1;
+          else studentAgg[sId].leave += 1;
+        });
+
+        setRecords(Object.values(studentAgg));
+      } else {
+        setRecords([]);
+      }
+    } catch (err) {
+      console.error("Failed to load attendance reports:", err);
+      setRecords([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAttendanceReports();
+  }, [startDate, endDate]);
+
+  const filteredRecords = useMemo(() => {
+    const normalizedClass = classFilter.trim().toLowerCase();
+    const normalizedSearch = search.trim().toLowerCase();
+
+    return records.filter((record) => {
       const matchesClass =
-        classFilter === "All" || record.className === classFilter;
+        !normalizedClass || record.className.toLowerCase().includes(normalizedClass);
 
       const matchesSearch =
-        record.name.toLowerCase().includes(search.toLowerCase()) ||
-        record.rollNo.toLowerCase().includes(search.toLowerCase());
+        !normalizedSearch ||
+        record.name.toLowerCase().includes(normalizedSearch) ||
+        record.rollNo.toLowerCase().includes(normalizedSearch);
 
       return matchesClass && matchesSearch;
     });
-  }, [classFilter, search]);
+  }, [records, classFilter, search]);
 
   const totals = useMemo(() => {
-    const total = records.reduce((sum, r) => sum + r.total, 0);
-    const present = records.reduce((sum, r) => sum + r.present, 0);
-    const absent = records.reduce((sum, r) => sum + r.absent, 0);
-    const late = records.reduce((sum, r) => sum + r.late, 0);
-    const leave = records.reduce((sum, r) => sum + r.leave, 0);
+    const total = filteredRecords.reduce((sum, r) => sum + r.total, 0);
+    const present = filteredRecords.reduce((sum, r) => sum + r.present, 0);
+    const absent = filteredRecords.reduce((sum, r) => sum + r.absent, 0);
+    const late = filteredRecords.reduce((sum, r) => sum + r.late, 0);
+    const leave = filteredRecords.reduce((sum, r) => sum + r.leave, 0);
 
     return {
-      students: records.length,
+      students: filteredRecords.length,
       total,
       present,
       absent,
@@ -79,9 +137,9 @@ export default function AttendanceReportsPage() {
       leave,
       rate: total ? Math.round((present / total) * 100) : 0,
     };
-  }, [records]);
+  }, [filteredRecords]);
 
-  const lowAttendance = records.filter((record) => percentage(record) < 75);
+  const lowAttendance = filteredRecords.filter((record) => percentage(record) < 75);
 
   function exportCSV() {
     const header = [
@@ -97,7 +155,7 @@ export default function AttendanceReportsPage() {
       "Attendance Percentage",
     ];
 
-    const rows = records.map((r) => [
+    const rows = filteredRecords.map((r) => [
       r.name,
       r.rollNo,
       r.className,
@@ -160,15 +218,14 @@ export default function AttendanceReportsPage() {
       <div className="mx-auto max-w-7xl space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-
             <button
-                    onClick={() => router.back()}
-                    className="mb-5 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-                        >
-                     <ArrowLeft size={17} />
-                      Back
+              onClick={() => router.back()}
+              className="mb-5 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 cursor-pointer"
+            >
+              <ArrowLeft size={17} />
+              Back
             </button>
-            
+
             <h1 className="mt-2 text-2xl font-extrabold text-gray-950 md:text-3xl">
               Attendance Reports
             </h1>
@@ -179,7 +236,7 @@ export default function AttendanceReportsPage() {
 
           <button
             onClick={exportCSV}
-            className="flex items-center gap-2 rounded-xl bg-yellow-400 px-4 py-3 text-sm font-bold text-gray-950 hover:bg-yellow-300"
+            className="flex items-center gap-2 rounded-xl bg-yellow-400 px-4 py-3 text-sm font-bold text-gray-950 hover:bg-yellow-300 cursor-pointer"
           >
             <Download size={18} />
             Export CSV
@@ -214,15 +271,13 @@ export default function AttendanceReportsPage() {
 
             <label className="text-sm font-semibold text-gray-700">
               Class
-              <select
+              <input
+                type="text"
                 value={classFilter}
                 onChange={(e) => setClassFilter(e.target.value)}
+                placeholder="All Classes"
                 className="mt-2 w-full rounded-xl border border-gray-200 px-3 py-2.5 font-normal outline-none focus:border-yellow-400"
-              >
-                <option value="All">All Classes</option>
-                <option value="Class 9">Class 9</option>
-                <option value="Class 10">Class 10</option>
-              </select>
+              />
             </label>
 
             <label className="text-sm font-semibold text-gray-700">
@@ -238,10 +293,6 @@ export default function AttendanceReportsPage() {
               </div>
             </label>
           </div>
-
-          <p className="mt-3 text-xs text-gray-400">
-            Demo report data is illustrative; date filters are shown for the planned reporting period.
-          </p>
         </section>
 
         <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -259,153 +310,117 @@ export default function AttendanceReportsPage() {
                   </div>
                 </div>
                 <p className="mt-3 text-3xl font-extrabold text-gray-950">
-                  {stat.value}
+                  {loading ? "..." : stat.value}
                 </p>
+                <p className="mt-1 text-xs text-gray-400">Aggregated database records</p>
               </div>
             );
           })}
         </section>
 
-        <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-          <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm xl:col-span-2">
-            <div className="mb-5 flex items-center gap-2">
-              <FileBarChart size={20} className="text-yellow-600" />
-              <h2 className="font-bold text-gray-950">Attendance Overview</h2>
+        <section className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-gray-100 p-5">
+            <div>
+              <h2 className="text-lg font-bold text-gray-950">Student Attendance Analytics</h2>
+              <p className="mt-1 text-sm text-gray-500">
+                Detailed session breakdown per student from MongoDB
+              </p>
             </div>
-
-            <div className="space-y-5">
-              {[
-                { label: "Present", value: totals.present, color: "bg-green-500" },
-                { label: "Absent", value: totals.absent, color: "bg-red-500" },
-                { label: "Late", value: totals.late, color: "bg-yellow-400" },
-                { label: "On Leave", value: totals.leave, color: "bg-blue-500" },
-              ].map((item) => {
-                const totalSessions = totals.present + totals.absent + totals.late + totals.leave;
-                const share = totalSessions
-                  ? Math.round((item.value / totalSessions) * 100)
-                  : 0;
-
-                return (
-                  <div key={item.label}>
-                    <div className="mb-2 flex justify-between text-sm">
-                      <span className="font-medium text-gray-700">{item.label}</span>
-                      <span className="text-gray-500">
-                        {item.value} sessions ({share}%)
-                      </span>
-                    </div>
-                    <div className="h-2.5 overflow-hidden rounded-full bg-gray-100">
-                      <div
-                        className={`h-full rounded-full ${item.color}`}
-                        style={{ width: `${share}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            <span className="rounded-full bg-yellow-100 px-3 py-1 text-xs font-bold text-gray-800">
+              {filteredRecords.length} Students
+            </span>
           </div>
 
-          <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-            <div className="mb-4 flex items-center gap-2">
-              <AlertTriangle size={20} className="text-orange-500" />
-              <h2 className="font-bold text-gray-950">Low Attendance</h2>
-            </div>
-            <p className="mb-4 text-sm text-gray-500">
-              Students below 75% attendance
-            </p>
-
-            {lowAttendance.length > 0 ? (
-              <div className="space-y-3">
-                {lowAttendance.map((student) => (
-                  <div
-                    key={student.id}
-                    className="rounded-xl border border-orange-100 bg-orange-50 p-3"
-                  >
-                    <p className="font-semibold text-gray-900">{student.name}</p>
-                    <div className="mt-1 flex items-center justify-between gap-2 text-xs text-gray-500">
-                      <span>{student.rollNo} · {student.className}</span>
-                      <span className="font-bold text-orange-700">
-                        {percentage(student)}%
-                      </span>
-                    </div>
-                  </div>
-                ))}
+          <div className="overflow-x-auto">
+            {loading ? (
+              <div className="flex items-center justify-center gap-2 py-12 text-sm text-gray-500">
+                <Loader2 className="animate-spin text-yellow-500" size={18} />
+                Calculating attendance metrics from MongoDB...
+              </div>
+            ) : filteredRecords.length === 0 ? (
+              <div className="py-12 text-center text-sm text-gray-500">
+                No attendance records match the selected filters.
               </div>
             ) : (
-              <p className="rounded-xl bg-green-50 p-4 text-sm text-green-700">
-                No students below 75% in this selection.
-              </p>
+              <table className="w-full min-w-[700px] text-left text-sm">
+                <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                  <tr>
+                    <th className="px-5 py-4">Student</th>
+                    <th className="px-5 py-4">Class</th>
+                    <th className="px-5 py-4">Sessions</th>
+                    <th className="px-5 py-4">Present</th>
+                    <th className="px-5 py-4">Absent</th>
+                    <th className="px-5 py-4">Late</th>
+                    <th className="px-5 py-4">Leave</th>
+                    <th className="px-5 py-4">Attendance %</th>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-gray-100">
+                  {filteredRecords.map((record) => {
+                    const rate = percentage(record);
+                    return (
+                      <tr key={record.id} className="hover:bg-yellow-50/40">
+                        <td className="px-5 py-4">
+                          <p className="font-semibold text-gray-900">{record.name}</p>
+                          <p className="mt-1 text-xs text-gray-400">{record.rollNo}</p>
+                        </td>
+                        <td className="px-5 py-4 text-gray-700">
+                          {record.className} - {record.section}
+                        </td>
+                        <td className="px-5 py-4 font-semibold text-gray-900">{record.total}</td>
+                        <td className="px-5 py-4 font-semibold text-green-600">{record.present}</td>
+                        <td className="px-5 py-4 font-semibold text-red-600">{record.absent}</td>
+                        <td className="px-5 py-4 font-semibold text-yellow-700">{record.late}</td>
+                        <td className="px-5 py-4 font-semibold text-blue-600">{record.leave}</td>
+                        <td className="px-5 py-4">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`rounded-full px-2.5 py-1 text-xs font-bold ${
+                                rate >= 75
+                                  ? "bg-green-100 text-green-700"
+                                  : "bg-red-100 text-red-700"
+                              }`}
+                            >
+                              {rate}%
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             )}
           </div>
         </section>
 
-        <section className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
-          <div className="border-b border-gray-100 p-5">
-            <h2 className="font-bold text-gray-950">Student-wise Attendance</h2>
-            <p className="mt-1 text-sm text-gray-500">
-              Attendance summaries for the selected class.
-            </p>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-200 text-left text-sm">
-              <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
-                <tr>
-                  <th className="px-5 py-4">Student</th>
-                  <th className="px-5 py-4">Class</th>
-                  <th className="px-5 py-4">Present</th>
-                  <th className="px-5 py-4">Absent</th>
-                  <th className="px-5 py-4">Late</th>
-                  <th className="px-5 py-4">Leave</th>
-                  <th className="px-5 py-4">Attendance</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {records.map((record) => {
-                  const rate = percentage(record);
-                  return (
-                    <tr key={record.id} className="hover:bg-yellow-50/40">
-                      <td className="px-5 py-4">
-                        <p className="font-semibold text-gray-900">{record.name}</p>
-                        <p className="mt-1 text-xs text-gray-400">{record.rollNo}</p>
-                      </td>
-                      <td className="px-5 py-4 text-gray-600">
-                        {record.className} - {record.section}
-                      </td>
-                      <td className="px-5 py-4 font-semibold text-green-700">{record.present}</td>
-                      <td className="px-5 py-4 font-semibold text-red-600">{record.absent}</td>
-                      <td className="px-5 py-4 text-gray-600">{record.late}</td>
-                      <td className="px-5 py-4 text-gray-600">{record.leave}</td>
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="h-2 w-20 overflow-hidden rounded-full bg-gray-100">
-                            <div
-                              className={`h-full rounded-full ${rate < 75 ? "bg-red-500" : "bg-green-500"}`}
-                              style={{ width: `${rate}%` }}
-                            />
-                          </div>
-                          <span className={`font-bold ${rate < 75 ? "text-red-600" : "text-green-700"}`}>
-                            {rate}%
-                          </span>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-                {records.length === 0 && (
-                  <tr>
-                    <td colSpan={7} className="px-5 py-12 text-center text-gray-500">
-                      No students match your search or class filter.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          <div className="border-t border-gray-100 px-5 py-4 text-xs text-gray-400">
-            {records.length} student records · Demo data
-          </div>
-        </section>
+        {/* Low Attendance Section */}
+        {lowAttendance.length > 0 && (
+          <section className="rounded-2xl border border-red-100 bg-red-50/60 p-5 shadow-sm">
+            <div className="mb-4 flex items-center gap-2 text-red-800">
+              <AlertTriangle size={20} />
+              <h2 className="font-bold">Students Requiring Intervention (&lt;75% Attendance)</h2>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
+              {lowAttendance.map((student) => (
+                <div
+                  key={student.id}
+                  className="rounded-xl border border-red-200 bg-white p-4 shadow-sm"
+                >
+                  <p className="font-semibold text-gray-900">{student.name}</p>
+                  <p className="text-xs text-gray-500">
+                    {student.className} · {student.rollNo}
+                  </p>
+                  <div className="mt-3 flex items-center justify-between text-xs">
+                    <span className="text-gray-500">Attendance:</span>
+                    <span className="font-bold text-red-600">{percentage(student)}%</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
       </div>
     </main>
   );

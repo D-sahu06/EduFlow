@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -15,10 +14,12 @@ import {
   Users,
   Wallet,
   Download,
+  Loader2,
 } from "lucide-react";
+import { api } from "@/lib/api";
 
 type FeeStructure = {
-  id: number;
+  id: string | number;
   className: string;
   department: string;
   tuitionFee: number;
@@ -28,64 +29,6 @@ type FeeStructure = {
   otherFee: number;
   status: "Active" | "Inactive";
 };
-
-const initialStructures: FeeStructure[] = [
-  {
-    id: 1,
-    className: "B.Tech - CSE",
-    department: "Engineering",
-    tuitionFee: 65000,
-    admissionFee: 10000,
-    examFee: 5000,
-    transportFee: 12000,
-    otherFee: 3000,
-    status: "Active",
-  },
-  {
-    id: 2,
-    className: "B.Tech - IT",
-    department: "Engineering",
-    tuitionFee: 62000,
-    admissionFee: 10000,
-    examFee: 5000,
-    transportFee: 12000,
-    otherFee: 3000,
-    status: "Active",
-  },
-  {
-    id: 3,
-    className: "BBA",
-    department: "Management",
-    tuitionFee: 40000,
-    admissionFee: 8000,
-    examFee: 4000,
-    transportFee: 10000,
-    otherFee: 2000,
-    status: "Active",
-  },
-  {
-    id: 4,
-    className: "B.Com",
-    department: "Commerce",
-    tuitionFee: 30000,
-    admissionFee: 6000,
-    examFee: 3000,
-    transportFee: 10000,
-    otherFee: 2000,
-    status: "Active",
-  },
-  {
-    id: 5,
-    className: "B.Sc - Physics",
-    department: "Science",
-    tuitionFee: 35000,
-    admissionFee: 7000,
-    examFee: 3500,
-    transportFee: 9000,
-    otherFee: 2000,
-    status: "Inactive",
-  },
-];
 
 const emptyForm = {
   className: "",
@@ -108,16 +51,59 @@ const money = (amount: number) =>
 export default function FeesStructurePage() {
   const router = useRouter();
 
-  const [structures, setStructures] =
-    useState<FeeStructure[]>(initialStructures);
+  const [structures, setStructures] = useState<FeeStructure[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
   const [modalOpen, setModalOpen] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<string | number | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [userRole, setUserRole] = useState<string>("ADMIN");
+
+  const canManage = ["SUPER_ADMIN", "ADMIN", "ACCOUNTANT"].includes(userRole);
+
+  const fetchStructures = async () => {
+    try {
+      setLoading(true);
+      setError("");
+      const res = await api.get("/fees/structures");
+      const list = res?.structures || res?.feeStructures || [];
+      if (Array.isArray(list)) {
+        const mapped: FeeStructure[] = list.map((s: any) => ({
+          id: s._id || s.id,
+          className: s.className ? (s.className.startsWith("Class") ? s.className : `Class ${s.className}`) : "General Class",
+          department: s.department || s.academicYear || "General",
+          tuitionFee: Number(s.tuitionFee !== undefined ? s.tuitionFee : (s.amount || 0)),
+          admissionFee: Number(s.admissionFee !== undefined ? s.admissionFee : 0),
+          examFee: Number(s.examFee !== undefined ? s.examFee : (s.examinationFee !== undefined ? s.examinationFee : 0)),
+          transportFee: Number(s.transportFee !== undefined ? s.transportFee : (s.libraryFee !== undefined ? s.libraryFee : 0)),
+          otherFee: Number(s.otherFee !== undefined ? s.otherFee : (s.activityFee !== undefined ? s.activityFee : 0)),
+          status: s.status || "Active",
+        }));
+        setStructures(mapped);
+      } else {
+        setStructures([]);
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to load fee structures.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    try {
+      const userStr = localStorage.getItem("eduflow-user");
+      if (userStr) {
+        const u = JSON.parse(userStr);
+        if (u.role) setUserRole(u.role);
+      }
+    } catch {}
+    fetchStructures();
+  }, []);
 
   const totalOf = (item: FeeStructure) =>
     item.tuitionFee +
@@ -163,7 +149,7 @@ export default function FeesStructurePage() {
   function openEditModal(item: FeeStructure) {
     setEditingId(item.id);
     setForm({
-      className: item.className,
+      className: item.className.replace(/^Class\s+/i, ""),
       department: item.department,
       tuitionFee: String(item.tuitionFee),
       admissionFee: String(item.admissionFee),
@@ -176,8 +162,13 @@ export default function FeesStructurePage() {
     setModalOpen(true);
   }
 
-  function saveStructure(event: React.FormEvent<HTMLFormElement>) {
+  async function saveStructure(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (!canManage) {
+      setError("Only accountants and administrators can manage fee structures.");
+      return;
+    }
 
     if (!form.className.trim() || !form.department) {
       setError("Please enter the course/class and select a department.");
@@ -202,60 +193,69 @@ export default function FeesStructurePage() {
       return;
     }
 
-    const duplicate = structures.some(
-      (item) =>
-        item.className.toLowerCase() === form.className.trim().toLowerCase() &&
-        item.id !== editingId
-    );
+    const totalAmount =
+      Number(form.tuitionFee) +
+      Number(form.admissionFee) +
+      Number(form.examFee) +
+      Number(form.transportFee) +
+      Number(form.otherFee);
 
-    if (duplicate) {
-      setError("This class/course already has a fee structure.");
+    try {
+      const payload = {
+        className: form.className.trim(),
+        department: form.department,
+        tuitionFee: Number(form.tuitionFee),
+        admissionFee: Number(form.admissionFee),
+        examinationFee: Number(form.examFee),
+        examFee: Number(form.examFee),
+        transportFee: Number(form.transportFee),
+        libraryFee: Number(form.transportFee),
+        activityFee: Number(form.otherFee),
+        otherFee: Number(form.otherFee),
+        amount: totalAmount,
+        totalAmount,
+        academicYear: "2026-2027",
+        status: form.status,
+      };
+
+      if (editingId !== null) {
+        await api.put(`/fees/structures/${editingId}`, payload);
+      } else {
+        await api.post("/fees/structures", payload);
+      }
+
+      setModalOpen(false);
+      setForm(emptyForm);
+      setEditingId(null);
+      setNotice("Fee structure saved successfully ");
+      await fetchStructures();
+    } catch (err: any) {
+      setError(err.message || "Failed to save fee structure.");
+    }
+  }
+
+  async function deleteStructure(id: string | number) {
+    if (!canManage) {
+      alert("Only accountants and administrators can delete fee structures.");
       return;
     }
 
-    const newStructure: FeeStructure = {
-      id: editingId ?? Date.now(),
-      className: form.className.trim(),
-      department: form.department,
-      tuitionFee: Number(form.tuitionFee),
-      admissionFee: Number(form.admissionFee),
-      examFee: Number(form.examFee),
-      transportFee: Number(form.transportFee),
-      otherFee: Number(form.otherFee),
-      status: form.status,
-    };
-
-    if (editingId !== null) {
-      setStructures((previous) =>
-        previous.map((item) =>
-          item.id === editingId ? newStructure : item
-        )
-      );
-      setNotice("Fee structure updated successfully.");
-    } else {
-      setStructures((previous) => [...previous, newStructure]);
-      setNotice("Fee structure added successfully.");
-    }
-
-    setModalOpen(false);
-    setForm(emptyForm);
-    setEditingId(null);
-  }
-
-  function deleteStructure(id: number) {
     const item = structures.find((row) => row.id === id);
     if (!item) return;
 
     const confirmed = window.confirm(
-      `Delete the fee structure for ${item.className}?`
+      `Delete the fee structure  ${item.className}`
     );
 
     if (!confirmed) return;
 
-    setStructures((previous) =>
-      previous.filter((row) => row.id !== id)
-    );
-    setNotice("Fee structure deleted.");
+    try {
+      await api.delete(`/fees/structures/${id}`);
+      setNotice("Fee structure deleted.");
+      await fetchStructures();
+    } catch (err: any) {
+      alert(err.message || "Failed to delete fee structure.");
+    }
   }
 
   function exportCSV() {
@@ -316,9 +316,6 @@ export default function FeesStructurePage() {
               Back
             </button>
 
-            {/* <p className="mb-1 text-sm text-slate-500">
-              Finance / Fee Structure
-            </p> */}
             <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">
               Fees Structure
             </h1>
@@ -335,13 +332,15 @@ export default function FeesStructurePage() {
               <Download size={17} />
               Export CSV
             </button>
-            <button
-              onClick={openAddModal}
-              className="inline-flex items-center gap-2 rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-amber-300"
-            >
-              <Plus size={18} />
-              Add Fee Structure
-            </button>
+            {canManage && (
+              <button
+                onClick={openAddModal}
+                className="inline-flex items-center gap-2 rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-amber-300"
+              >
+                <Plus size={18} />
+                Add Fees Structure
+              </button>
+            )}
           </div>
         </header>
 
@@ -450,11 +449,18 @@ export default function FeesStructurePage() {
                   <th className="px-4 py-4">Other</th>
                   <th className="px-4 py-4">Total Fee</th>
                   <th className="px-4 py-4">Status</th>
-                  <th className="px-5 py-4 text-right">Actions</th>
+                  {canManage && <th className="px-5 py-4 text-right">Actions</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredStructures.map((item) => (
+                {loading ? (
+                  <tr>
+                    <td colSpan={canManage ? 9 : 8} className="px-5 py-12 text-center text-slate-500">
+                      <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin text-amber-500" />
+                      Loading fee structures...
+                    </td>
+                  </tr>
+                ) : filteredStructures.map((item) => (
                   <tr key={item.id} className="hover:bg-slate-50">
                     <td className="px-5 py-4">
                       <p className="font-bold text-slate-900">
@@ -493,37 +499,38 @@ export default function FeesStructurePage() {
                         {item.status}
                       </span>
                     </td>
-                    <td className="px-5 py-4">
-                      <div className="flex justify-end gap-2">
-                        <button
-                          onClick={() => openEditModal(item)}
-                          title="Edit fee structure"
-                          aria-label={`Edit ${item.className}`}
-                          className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:border-amber-300 hover:bg-amber-50 hover:text-amber-800"
-                        >
-                          <Pencil size={16} />
-                        </button>
-                        <button
-                          onClick={() => deleteStructure(item.id)}
-                          title="Delete fee structure"
-                          aria-label={`Delete ${item.className}`}
-                          className="rounded-lg border border-slate-200 p-2 text-red-600 hover:border-red-200 hover:bg-red-50"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </td>
+                    {canManage && (
+                      <td className="px-5 py-4">
+                        <div className="flex justify-end gap-2">
+                          <button
+                            onClick={() => openEditModal(item)}
+                            title="Edit fee structure"
+                            aria-label={`Edit ${item.className}`}
+                            className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:border-amber-300 hover:bg-amber-50 hover:text-amber-800"
+                          >
+                            <Pencil size={16} />
+                          </button>
+                          <button
+                            onClick={() => deleteStructure(item.id)}
+                            title="Delete fee structure"
+                            aria-label={`Delete ${item.className}`}
+                            className="rounded-lg border border-slate-200 p-2 text-red-600 hover:border-red-200 hover:bg-red-50"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))}
 
-                {filteredStructures.length === 0 && (
+                {!loading && filteredStructures.length === 0 && (
                   <tr>
                     <td
-                      colSpan={9}
+                      colSpan={canManage ? 9 : 8}
                       className="px-5 py-12 text-center text-slate-500"
                     >
-                      No fee structures found. Try changing your filters or add
-                      a new structure.
+                      No fee structures found in database.
                     </td>
                   </tr>
                 )}
@@ -580,7 +587,7 @@ export default function FeesStructurePage() {
                       onChange={(event) =>
                         setForm({ ...form, className: event.target.value })
                       }
-                      placeholder="e.g. B.Tech - CSE"
+                      placeholder="e.g. Class 10"
                       className="form-input"
                     />
                   </Field>
@@ -599,6 +606,7 @@ export default function FeesStructurePage() {
                       <option value="Management">Management</option>
                       <option value="Commerce">Commerce</option>
                       <option value="Science">Science</option>
+                      <option value="General">General</option>
                     </select>
                   </Field>
                 </div>
@@ -619,10 +627,10 @@ export default function FeesStructurePage() {
                     ).map(([key, label]) => (
                       <Field key={key} label={label}>
                         <div className="relative">
-                          <IndianRupee
+                          {/* <IndianRupee
                             size={16}
                             className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                          />
+                          /> */}
                           <input
                             required
                             type="number"
@@ -699,9 +707,7 @@ export default function FeesStructurePage() {
         )}
 
         <p className="text-xs text-slate-500">
-          EduFlow ERP · Fee structure demo. Changes currently stay in page
-          state and reset on refresh; connect the backend or shared storage for
-          persistent records.
+          EduFlow ERP .
         </p>
       </div>
 

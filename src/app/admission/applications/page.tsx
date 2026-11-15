@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -12,12 +11,15 @@ import {
   XCircle,
   Clock,
   Download,
+  Loader2,
 } from "lucide-react";
+import { api } from "@/lib/api";
 
 type Status = "Pending" | "Approved" | "Rejected";
 
 type Application = {
   id: string;
+  mongoId: string;
   name: string;
   email: string;
   course: string;
@@ -25,54 +27,6 @@ type Application = {
   percentage: number;
   status: Status;
 };
-
-const initialApplications: Application[] = [
-  {
-    id: "APP-1001",
-    name: "Aarav Sharma",
-    email: "aarav@example.com",
-    course: "B.Tech - IT",
-    date: "2026-10-26",
-    percentage: 88,
-    status: "Pending",
-  },
-  {
-    id: "APP-1002",
-    name: "Priya Verma",
-    email: "priya@example.com",
-    course: "B.Tech - CSE",
-    date: "2026-10-25",
-    percentage: 94,
-    status: "Approved",
-  },
-  {
-    id: "APP-1003",
-    name: "Rahul Patel",
-    email: "rahul@example.com",
-    course: "BBA",
-    date: "2026-10-25",
-    percentage: 76,
-    status: "Pending",
-  },
-  {
-    id: "APP-1004",
-    name: "Ananya Singh",
-    email: "ananya@example.com",
-    course: "B.Tech - IT",
-    date: "2026-10-24",
-    percentage: 68,
-    status: "Rejected",
-  },
-  {
-    id: "APP-1005",
-    name: "Vivek Joshi",
-    email: "vivek@example.com",
-    course: "B.Tech - CSE",
-    date: "2026-10-23",
-    percentage: 91,
-    status: "Pending",
-  },
-];
 
 function getStatusStyle(status: Status) {
   switch (status) {
@@ -88,12 +42,46 @@ function getStatusStyle(status: Status) {
 export default function ApplicationsPage() {
   const router = useRouter();
 
-  const [applications, setApplications] =
-    useState<Application[]>(initialApplications);
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [courseFilter, setCourseFilter] = useState("All");
   const [selected, setSelected] = useState<Application | null>(null);
+
+  const loadApplications = async () => {
+    try {
+      setLoading(true);
+      const res = await api.get("/admissions/applications");
+      if (res && res.applications) {
+        setApplications(
+          res.applications.map((app: any) => ({
+            id: app.applicationNumber || app._id,
+            mongoId: app._id,
+            name: app.applicantName,
+            email: app.email,
+            course: app.applyingForClass,
+            date: app.createdAt
+              ? app.createdAt.slice(0, 10)
+              : new Date().toISOString().slice(0, 10),
+            percentage: app.previousPercentage || 0,
+            status: (app.status === "Approved" || app.status === "Rejected"
+              ? app.status
+              : "Pending") as Status,
+          }))
+        );
+      }
+    } catch (err) {
+      console.error("Failed to load applications from MongoDB:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadApplications();
+  }, []);
 
   const filteredApplications = useMemo(() => {
     return applications.filter((application) => {
@@ -105,29 +93,29 @@ export default function ApplicationsPage() {
         application.email.toLowerCase().includes(query);
 
       const matchesStatus =
-        statusFilter === "All" ||
-        application.status === statusFilter;
+        statusFilter === "All" || application.status === statusFilter;
 
       const matchesCourse =
-        courseFilter === "All" ||
-        application.course === courseFilter;
+        courseFilter === "All" || application.course === courseFilter;
 
       return matchesSearch && matchesStatus && matchesCourse;
     });
   }, [applications, search, statusFilter, courseFilter]);
 
-  function updateStatus(id: string, status: Status) {
-    setApplications((current) =>
-      current.map((application) =>
-        application.id === id
-          ? { ...application, status }
-          : application
-      )
-    );
+  async function updateStatus(id: string, mongoId: string, status: Status) {
+    setActionLoading(id);
+    try {
+      await api.put(`/admissions/applications/${mongoId}/status`, { status });
+      await loadApplications();
 
-    setSelected((current) =>
-      current?.id === id ? { ...current, status } : current
-    );
+      setSelected((current) =>
+        current?.id === id ? { ...current, status } : current
+      );
+    } catch (err: any) {
+      alert(err.message || "Failed to update application status in database.");
+    } finally {
+      setActionLoading(null);
+    }
   }
 
   function exportCSV() {
@@ -184,7 +172,7 @@ export default function ApplicationsPage() {
     <main className="min-h-screen bg-gray-50 p-4 md:p-8">
       <button
         onClick={() => router.back()}
-        className="mb-5 inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:border-yellow-400 hover:bg-yellow-50"
+        className="mb-5 inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:border-yellow-400 hover:bg-yellow-50 cursor-pointer"
       >
         <ArrowLeft size={18} />
         Back
@@ -192,23 +180,20 @@ export default function ApplicationsPage() {
 
       <div className="mb-7 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          {/* <p className="mb-2 text-sm text-gray-500">
-            EduFlow / Admission / Applications
-          </p> */}
           <h1 className="text-2xl font-bold text-gray-900 md:text-3xl">
             Applications
           </h1>
           <p className="mt-2 text-sm text-gray-500">
-            Search, review and manage student admission applications.
+            Live student admission applications saved in MongoDB database.
           </p>
         </div>
 
-        <Link
+        {/* <Link
           href="/admission/new"
-          className="rounded-xl bg-yellow-400 px-5 py-3 text-center text-sm font-semibold text-gray-900 hover:bg-yellow-500"
+          className="rounded-xl bg-yellow-400 px-5 py-3 text-center text-sm font-semibold text-gray-900 hover:bg-yellow-500 cursor-pointer"
         >
           + New Application
-        </Link>
+        </Link> */}
       </div>
 
       {/* Summary cards */}
@@ -218,19 +203,19 @@ export default function ApplicationsPage() {
             title: "Pending",
             count: pendingCount,
             icon: Clock,
-            style: "text-yellow-700 bg-yellow-100",
+            color: "text-yellow-600 bg-yellow-50",
           },
           {
             title: "Approved",
             count: approvedCount,
             icon: CheckCircle2,
-            style: "text-green-700 bg-green-100",
+            color: "text-green-600 bg-green-50",
           },
           {
             title: "Rejected",
             count: rejectedCount,
             icon: XCircle,
-            style: "text-red-700 bg-red-100",
+            color: "text-red-600 bg-red-50",
           },
         ].map((item) => {
           const Icon = item.icon;
@@ -241,13 +226,14 @@ export default function ApplicationsPage() {
               className="flex items-center justify-between rounded-2xl border border-gray-100 bg-white p-5 shadow-sm"
             >
               <div>
-                <p className="text-sm text-gray-500">{item.title}</p>
+                <p className="text-sm font-medium text-gray-500">{item.title}</p>
                 <p className="mt-2 text-2xl font-bold text-gray-900">
                   {item.count}
                 </p>
               </div>
-              <div className={`rounded-xl p-3 ${item.style}`}>
-                <Icon size={22} />
+
+              <div className={`rounded-xl p-3 ${item.color}`}>
+                <Icon size={24} />
               </div>
             </div>
           );
@@ -255,156 +241,171 @@ export default function ApplicationsPage() {
       </div>
 
       {/* Search and filters */}
-      <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-        <div className="mb-5 flex flex-col gap-3 lg:flex-row">
-          <div className="relative flex-1">
-            <Search
-              size={18}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-            />
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search by name, application ID or email..."
-              className="w-full rounded-xl border border-gray-200 py-3 pl-10 pr-4 text-sm outline-none focus:border-yellow-400 focus:ring-2 focus:ring-yellow-100"
-            />
-          </div>
-
-          <select
-            value={courseFilter}
-            onChange={(event) => setCourseFilter(event.target.value)}
-            className="rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-yellow-400"
-          >
-            <option value="All">All Courses</option>
-            <option value="B.Tech - IT">B.Tech - IT</option>
-            <option value="B.Tech - CSE">B.Tech - CSE</option>
-            <option value="BBA">BBA</option>
-          </select>
-
-          <select
-            value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value)}
-            className="rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-yellow-400"
-          >
-            <option value="All">All Statuses</option>
-            <option value="Pending">Pending</option>
-            <option value="Approved">Approved</option>
-            <option value="Rejected">Rejected</option>
-          </select>
-
-          <button
-            onClick={exportCSV}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-          >
-            <Download size={17} />
-            Export CSV
-          </button>
+      <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:flex-row sm:items-center">
+        <div className="relative flex-1">
+          <Search
+            size={18}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+          />
+          <input
+            type="text"
+            placeholder="Search by name, ID or email..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full rounded-xl border border-gray-200 bg-gray-50 py-2.5 pl-10 pr-4 text-sm text-gray-800 outline-none focus:border-yellow-400"
+          />
         </div>
 
-        <div className="mb-4 text-sm text-gray-500">
-          Showing {filteredApplications.length} of {applications.length} applications
-        </div>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm font-medium text-gray-700 outline-none focus:border-yellow-400"
+        >
+          <option value="All">All Status</option>
+          <option value="Pending">Pending</option>
+          <option value="Approved">Approved</option>
+          <option value="Rejected">Rejected</option>
+        </select>
 
+        <select
+          value={courseFilter}
+          onChange={(e) => setCourseFilter(e.target.value)}
+          className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm font-medium text-gray-700 outline-none focus:border-yellow-400"
+        >
+          <option value="All">All Courses</option>
+          {Array.from(new Set(applications.map((app) => app.course)))
+            .filter(Boolean)
+            .sort()
+            .map((course) => (
+              <option key={course} value={course}>
+                {course}
+              </option>
+            ))}
+        </select>
+
+        <button
+          onClick={exportCSV}
+          className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:border-yellow-400 hover:bg-yellow-50 cursor-pointer"
+        >
+          <Download size={16} />
+          Export
+        </button>
+      </div>
+
+      {/* Applications list */}
+      <section className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-212.5 text-left">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
-                <th className="px-4 py-4">Applicant</th>
-                <th className="px-4 py-4">Course</th>
-                <th className="px-4 py-4">Percentage</th>
-                <th className="px-4 py-4">Applied Date</th>
-                <th className="px-4 py-4">Status</th>
-                <th className="px-4 py-4">Actions</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {filteredApplications.map((application) => (
-                <tr
-                  key={application.id}
-                  className="border-b border-gray-50 last:border-0 hover:bg-gray-50"
-                >
-                  <td className="px-4 py-4">
-                    <p className="font-semibold text-gray-900">
-                      {application.name}
-                    </p>
-                    <p className="mt-1 text-xs text-gray-500">
-                      {application.id} · {application.email}
-                    </p>
-                  </td>
-
-                  <td className="px-4 py-4 text-sm text-gray-600">
-                    {application.course}
-                  </td>
-
-                  <td className="px-4 py-4 text-sm font-semibold text-gray-800">
-                    {application.percentage}%
-                  </td>
-
-                  <td className="px-4 py-4 text-sm text-gray-600">
-                    {application.date}
-                  </td>
-
-                  <td className="px-4 py-4">
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-semibold ${getStatusStyle(
-                        application.status
-                      )}`}
-                    >
-                      {application.status}
-                    </span>
-                  </td>
-
-                  <td className="px-4 py-4">
-                    <div className="flex items-center gap-2">
-                      <button
-                        title="View details"
-                        onClick={() => setSelected(application)}
-                        className="rounded-lg border border-gray-200 p-2 text-gray-600 hover:bg-gray-100"
-                      >
-                        <Eye size={16} />
-                      </button>
-
-                      {application.status === "Pending" && (
-                        <>
-                          <button
-                            title="Approve"
-                            onClick={() =>
-                              updateStatus(application.id, "Approved")
-                            }
-                            className="rounded-lg bg-green-50 p-2 text-green-700 hover:bg-green-100"
-                          >
-                            <CheckCircle2 size={16} />
-                          </button>
-
-                          <button
-                            title="Reject"
-                            onClick={() =>
-                              updateStatus(application.id, "Rejected")
-                            }
-                            className="rounded-lg bg-red-50 p-2 text-red-700 hover:bg-red-100"
-                          >
-                            <XCircle size={16} />
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-
-              {filteredApplications.length === 0 && (
+          {loading ? (
+            <div className="flex items-center justify-center gap-3 py-16 text-gray-500">
+              <Loader2 className="animate-spin text-yellow-500" size={24} />
+              <span>Fetching applications from MongoDB...</span>
+            </div>
+          ) : (
+            <table className="w-full min-w-160 text-left text-sm text-gray-600">
+              <thead className="border-b border-gray-100 bg-gray-50/50 text-xs font-semibold uppercase text-gray-400">
                 <tr>
-                  <td
-                    colSpan={6}
-                    className="px-4 py-12 text-center text-sm text-gray-500"
-                  >
-                    No applications match your search or filters.
-                  </td>
+                  <th className="px-6 py-4">Application ID</th>
+                  <th className="px-6 py-4">Applicant</th>
+                  <th className="px-6 py-4">Course</th>
+                  <th className="px-6 py-4">Percentage</th>
+                  <th className="px-6 py-4">Status</th>
+                  <th className="px-6 py-4">Actions</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+
+              <tbody className="divide-y divide-gray-100">
+                {filteredApplications.map((application) => (
+                  <tr key={application.mongoId} className="hover:bg-gray-50/50">
+                    <td className="px-6 py-4 font-mono text-xs font-bold text-gray-900">
+                      {application.id}
+                    </td>
+
+                    <td className="px-6 py-4">
+                      <div className="font-semibold text-gray-900">
+                        {application.name}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {application.email}
+                      </div>
+                    </td>
+
+                    <td className="px-6 py-4">{application.course}</td>
+
+                    <td className="px-6 py-4 font-medium text-gray-800">
+                      {application.percentage}%
+                    </td>
+
+                    <td className="px-6 py-4">
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-semibold ${getStatusStyle(
+                          application.status
+                        )}`}
+                      >
+                        {application.status}
+                      </span>
+                    </td>
+
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2">
+                        <button
+                          title="View details"
+                          onClick={() => setSelected(application)}
+                          className="rounded-lg border border-gray-200 p-2 text-gray-600 hover:bg-gray-100 cursor-pointer"
+                        >
+                          <Eye size={16} />
+                        </button>
+
+                        {application.status === "Pending" && (
+                          <>
+                            <button
+                              title="Approve in Database"
+                              disabled={actionLoading === application.id}
+                              onClick={() =>
+                                updateStatus(
+                                  application.id,
+                                  application.mongoId,
+                                  "Approved"
+                                )
+                              }
+                              className="rounded-lg bg-green-50 p-2 text-green-700 hover:bg-green-100 cursor-pointer disabled:opacity-50"
+                            >
+                              <CheckCircle2 size={16} />
+                            </button>
+
+                            <button
+                              title="Reject in Database"
+                              disabled={actionLoading === application.id}
+                              onClick={() =>
+                                updateStatus(
+                                  application.id,
+                                  application.mongoId,
+                                  "Rejected"
+                                )
+                              }
+                              className="rounded-lg bg-red-50 p-2 text-red-700 hover:bg-red-100 cursor-pointer disabled:opacity-50"
+                            >
+                              <XCircle size={16} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+
+                {filteredApplications.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={6}
+                      className="px-6 py-12 text-center text-sm text-gray-500"
+                    >
+                      No applications found in MongoDB. Click &ldquo;+ New Application&rdquo; to create one.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
         </div>
       </section>
 
@@ -429,13 +430,13 @@ export default function ApplicationsPage() {
                 >
                   Application Details
                 </h2>
-                <p className="mt-1 text-sm text-gray-500">
-                  {selected.id}
+                <p className="mt-1 font-mono text-sm text-gray-500">
+                  {selected.id} (ID: {selected.mongoId})
                 </p>
               </div>
               <button
                 onClick={() => setSelected(null)}
-                className="rounded-lg px-3 py-1 text-gray-500 hover:bg-gray-100"
+                className="rounded-lg px-3 py-1 text-gray-500 hover:bg-gray-100 cursor-pointer"
               >
                 Close
               </button>
@@ -443,9 +444,9 @@ export default function ApplicationsPage() {
 
             <div className="space-y-4">
               {[
-                ["Applicant", selected.name],
-                ["Email", selected.email],
-                ["Course", selected.course],
+                ["Applicant Name", selected.name],
+                ["Email Address", selected.email],
+                ["Applying For Course", selected.course],
                 ["Applied Date", selected.date],
                 ["Previous Percentage", `${selected.percentage}%`],
                 ["Application Status", selected.status],
@@ -465,16 +466,22 @@ export default function ApplicationsPage() {
             {selected.status === "Pending" && (
               <div className="mt-6 flex gap-3">
                 <button
-                  onClick={() => updateStatus(selected.id, "Approved")}
-                  className="flex-1 rounded-xl bg-green-600 px-4 py-3 text-sm font-semibold text-white hover:bg-green-700"
+                  disabled={actionLoading === selected.id}
+                  onClick={() =>
+                    updateStatus(selected.id, selected.mongoId, "Approved")
+                  }
+                  className="flex-1 rounded-xl bg-green-600 px-4 py-3 text-sm font-semibold text-white hover:bg-green-700 cursor-pointer disabled:opacity-50"
                 >
-                  Approve
+                  Approve Application
                 </button>
                 <button
-                  onClick={() => updateStatus(selected.id, "Rejected")}
-                  className="flex-1 rounded-xl bg-red-600 px-4 py-3 text-sm font-semibold text-white hover:bg-red-700"
+                  disabled={actionLoading === selected.id}
+                  onClick={() =>
+                    updateStatus(selected.id, selected.mongoId, "Rejected")
+                  }
+                  className="flex-1 rounded-xl bg-red-600 px-4 py-3 text-sm font-semibold text-white hover:bg-red-700 cursor-pointer disabled:opacity-50"
                 >
-                  Reject
+                  Reject Application
                 </button>
               </div>
             )}

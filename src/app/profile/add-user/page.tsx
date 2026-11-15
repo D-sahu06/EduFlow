@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/sidebar";
 import Topbar from "@/components/topbar";
+import { useSidebar } from "@/lib/sidebar";
 import Image from "next/image";
+import { api } from "@/lib/api";
 import {
   X,
   UserRound,
@@ -57,20 +59,20 @@ bankAccountNumber: string;
 };
 
 const defaultProfile: Profile = {
-  firstName: "Dewansh",
-  lastName: "Sahu",
-  username: "dewansh.sahu",
-  email: "dewanshsahu89@gmail.com",
-  birthDate: "2005-07-09",
-  phone: "7869135957",
+  firstName: "",
+  lastName: "",
+  username: "",
+  email: "",
+  birthDate: "",
+  phone: "",
   gender: "Male",
-  manager:"",
-  status:"Unmarried",
+  manager: "",
+  status: "Unmarried",
   emergencyContact: "",
   emergencyRelation: "",
   emergencyName: "",
   address: "",
-  joiningDate: "2026-10-19",
+  joiningDate: "",
   department: "",
   designation: "",
   employeeId: "",
@@ -80,9 +82,9 @@ const defaultProfile: Profile = {
   documentName: "",
   documentNumber: "",
   profileImage: "",
-  panNumber:"",
+  panNumber: "",
   aadhaarNumber: "",
-  bankName:"",
+  bankName: "",
   ifscCode: "",
   accountHolderName: "",
   bankAccountNumber: "",
@@ -96,42 +98,16 @@ const tabs: { id: Tab; label: string; icon: typeof UserRound }[] = [
 
 export default function EditProfilePage() {
   const router = useRouter();
+  const { sidebarOpen } = useSidebar();
   const [activeTab, setActiveTab] = useState<Tab>("personal");
   const [form, setForm] = useState<Profile>(defaultProfile);
   const [ready, setReady] = useState(false);
   const [savedMessage, setSavedMessage] = useState("");
 
   useEffect(() => {
-  let cancelled = false;
-
-  async function loadProfile() {
-    let loadedProfile = defaultProfile;
-
-    try {
-      const saved = localStorage.getItem("eduflow-profile");
-
-      if (saved) {
-        loadedProfile = {
-          ...defaultProfile,
-          ...JSON.parse(saved),
-        };
-      }
-    } catch {
-      loadedProfile = defaultProfile;
-    }
-
-    if (!cancelled) {
-      setForm(loadedProfile);
-      setReady(true);
-    }
-  }
-
-  loadProfile();
-
-  return () => {
-    cancelled = true;
-  };
-}, []);
+    setForm(defaultProfile);
+    setReady(true);
+  }, []);
 
   function handleChange(
     event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
@@ -173,15 +149,24 @@ export default function EditProfilePage() {
     reader.readAsDataURL(file);
   }
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     try {
-      localStorage.setItem("eduflow-profile", JSON.stringify(form));
-      router.push("/profile");
+      const fullName = `${form.firstName} ${form.lastName}`.trim() || form.username || "New User";
+      await api.post("/users", {
+        name: fullName,
+        username: form.username || (form.email ? form.email.split("@")[0] : `user_${Date.now()}`),
+        email: form.email,
+        phone: form.phone,
+        role: "STUDENT",
+        department: form.department || "General",
+        password: "User@123456",
+      });
+      router.push("/admin/users");
     } catch {
       setSavedMessage(
-        "Could not save changes. Try using a smaller profile image."
+        "Could not create user account. Please verify the user email and username."
       );
     }
   }
@@ -192,9 +177,14 @@ export default function EditProfilePage() {
     return (
   <div className="min-h-screen bg-slate-50">
     <Sidebar />
-    <div className="min-w-0 md:ml-64">
+    <div
+      data-sidebar-content="true"
+      className={`min-w-0 transition-all duration-300 ease-in-out ${
+        sidebarOpen ? "md:ml-64" : "ml-0 md:ml-0 w-full"
+      }`}
+    >
       <Topbar />
-      <div className="mx-auto max-w-5xl">
+      <div className="w-full px-5 py-6 md:px-8">
         <div className="mb-5">
           <h1 className="text-2xl font-bold text-slate-900">
             Edit Profile

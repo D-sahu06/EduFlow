@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -14,7 +14,9 @@ import {
   Layers,
   GraduationCap,
   ChevronDown,
+  Loader2,
 } from "lucide-react";
+import { api } from "@/lib/api";
 
 type SchoolClass = {
   id: number;
@@ -24,41 +26,6 @@ type SchoolClass = {
   capacity: number;
   students: number;
 };
-
-const initialClasses: SchoolClass[] = [
-  {
-    id: 1,
-    name: "Class 9",
-    teacher: "Priya Sharma",
-    sections: ["A", "B", "C"],
-    capacity: 40,
-    students: 108,
-  },
-  {
-    id: 2,
-    name: "Class 10",
-    teacher: "Amit Verma",
-    sections: ["A", "B"],
-    capacity: 40,
-    students: 76,
-  },
-  {
-    id: 3,
-    name: "Class 11",
-    teacher: "Neha Jain",
-    sections: ["A", "B"],
-    capacity: 45,
-    students: 68,
-  },
-  {
-    id: 4,
-    name: "Class 12",
-    teacher: "Rahul Patel",
-    sections: ["A", "B", "C"],
-    capacity: 45,
-    students: 112,
-  },
-];
 
 const emptyForm = {
   name: "",
@@ -71,16 +38,97 @@ const emptyForm = {
 export default function ClassesPage() {
   const router = useRouter();
 
-  const [classes, setClasses] =
-    useState<SchoolClass[]>(initialClasses);
+  const [classes, setClasses] = useState<SchoolClass[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [selectedClass, setSelectedClass] =
-    useState<SchoolClass | null>(null);
+  const [selectedClass, setSelectedClass] = useState<SchoolClass | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
+  const [userRole, setUserRole] = useState("");
+
+  useEffect(() => {
+    const role = localStorage.getItem("role") || "";
+    setUserRole(role);
+    fetchClassData();
+  }, []);
+
+  async function fetchClassData() {
+    setLoading(true);
+    try {
+      const [resStudents, resTeachers] = await Promise.allSettled([
+        api.get<{ success: boolean; students: any[] }>("/students"),
+        api.get<{ success: boolean; teachers: any[] }>("/teachers"),
+      ]);
+
+      const students =
+        resStudents.status === "fulfilled" && resStudents.value?.students
+          ? resStudents.value.students
+          : [];
+
+      const teachers =
+        resTeachers.status === "fulfilled" && resTeachers.value?.teachers
+          ? resTeachers.value.teachers
+          : [];
+
+      const classMap: Record<string, { sections: Set<string>; count: number; teacher: string }> = {};
+
+      // Map from teachers' assigned subjects
+      teachers.forEach((t: any) => {
+        if (Array.isArray(t.assignedSubjects)) {
+          t.assignedSubjects.forEach((sub: any) => {
+            const cName = sub.className;
+            if (cName) {
+              if (!classMap[cName]) {
+                classMap[cName] = { sections: new Set(), count: 0, teacher: t.name || "Faculty" };
+              } else if (!classMap[cName].teacher || classMap[cName].teacher === "Unassigned") {
+                classMap[cName].teacher = t.name || "Faculty";
+              }
+              if (sub.section) {
+                classMap[cName].sections.add(sub.section.toUpperCase());
+              }
+            }
+          });
+        }
+      });
+
+      // Map from students and count enrolled students
+      students.forEach((s: any) => {
+        const cName = s.className;
+        if (cName) {
+          if (!classMap[cName]) {
+            classMap[cName] = { sections: new Set(), count: 0, teacher: "Unassigned" };
+          }
+          classMap[cName].count += 1;
+          if (s.section) {
+            classMap[cName].sections.add(s.section.toUpperCase());
+          }
+        }
+      });
+
+      const loadedClasses: SchoolClass[] = Object.keys(classMap).map((cName, idx) => {
+        const secArray = Array.from(classMap[cName].sections);
+        return {
+          id: idx + 1,
+          name: cName,
+          teacher: classMap[cName].teacher || "Unassigned",
+          sections: secArray.length > 0 ? secArray : ["A"],
+          capacity: 40,
+          students: classMap[cName].count,
+        };
+      });
+
+      setClasses(loadedClasses);
+    } catch {
+      setClasses([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const canManage = ["SUPER_ADMIN", "ADMIN", "PRINCIPAL"].includes(userRole);
 
   const filteredClasses = useMemo(
     () =>
@@ -156,11 +204,13 @@ export default function ClassesPage() {
       return;
     }
 
-    if (classes.some(
-      (item) =>
-        item.name.toLowerCase() === name.toLowerCase() &&
-        item.id !== editingId
-    )) {
+    if (
+      classes.some(
+        (item) =>
+          item.name.toLowerCase() === name.toLowerCase() &&
+          item.id !== editingId
+      )
+    ) {
       setError("This class already exists.");
       return;
     }
@@ -215,7 +265,6 @@ export default function ClassesPage() {
               Back
             </button>
             <div>
-             
               <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
                 Class & Section
               </h1>
@@ -225,12 +274,14 @@ export default function ClassesPage() {
             </div>
           </div>
 
-          <button
-            onClick={openCreate}
-            className="flex items-center justify-center gap-2 rounded-xl bg-amber-400 px-5 py-3 text-sm font-bold text-slate-900 hover:bg-amber-300"
-          >
-            <Plus size={18} /> Add Class
-          </button>
+          {canManage && (
+            <button
+              onClick={openCreate}
+              className="flex items-center justify-center gap-2 rounded-xl bg-amber-400 px-5 py-3 text-sm font-bold text-slate-900 hover:bg-amber-300"
+            >
+              <Plus size={18} /> Add Class
+            </button>
+          )}
         </div>
 
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -269,92 +320,100 @@ export default function ClassesPage() {
           </p>
         </section>
 
-        <section className="grid gap-5 lg:grid-cols-2">
-          {filteredClasses.map((item) => (
-            <article
-              key={item.id}
-              className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md sm:p-6"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-100 text-amber-800">
-                    <GraduationCap size={24} />
+        {loading ? (
+          <div className="flex h-40 items-center justify-center">
+            <Loader2 className="animate-spin text-amber-500" size={32} />
+          </div>
+        ) : (
+          <section className="grid gap-5 lg:grid-cols-2">
+            {filteredClasses.map((item) => (
+              <article
+                key={item.id}
+                className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md sm:p-6"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-100 text-amber-800">
+                      <GraduationCap size={24} />
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-bold text-slate-900">
+                        {item.name}
+                      </h2>
+                      <p className="text-sm text-slate-500">
+                        {item.sections.length} sections
+                      </p>
+                    </div>
                   </div>
+
+                  {canManage && (
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => openEdit(item)}
+                        aria-label={`Edit ${item.name}`}
+                        className="rounded-lg border border-slate-200 p-2 hover:bg-amber-50"
+                      >
+                        <Pencil size={16} />
+                      </button>
+                      <button
+                        onClick={() => setDeleteId(item.id)}
+                        aria-label={`Delete ${item.name}`}
+                        className="rounded-lg border border-slate-200 p-2 text-red-600 hover:bg-red-50"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-5 grid grid-cols-2 gap-3">
+                  <div className="rounded-xl bg-slate-50 p-3">
+                    <p className="text-xs text-slate-500">Students</p>
+                    <p className="mt-1 text-xl font-bold">{item.students}</p>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 p-3">
+                    <p className="text-xs text-slate-500">Capacity / Section</p>
+                    <p className="mt-1 text-xl font-bold">{item.capacity}</p>
+                  </div>
+                </div>
+
+                <div className="mt-5">
+                  <p className="mb-2 text-sm font-semibold text-slate-700">
+                    Sections
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {item.sections.map((section) => (
+                      <button
+                        key={section}
+                        onClick={() => setSelectedClass(item)}
+                        className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100"
+                      >
+                        Section {section}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4">
                   <div>
-                    <h2 className="text-lg font-bold text-slate-900">
-                      {item.name}
-                    </h2>
-                    <p className="text-sm text-slate-500">
-                      {item.sections.length} sections
+                    <p className="text-xs text-slate-500">Class Teacher</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-800">
+                      {item.teacher}
                     </p>
                   </div>
-                </div>
-
-                <div className="flex gap-1">
                   <button
-                    onClick={() => openEdit(item)}
-                    aria-label={`Edit ${item.name}`}
-                    className="rounded-lg border border-slate-200 p-2 hover:bg-amber-50"
+                    onClick={() => setSelectedClass(item)}
+                    className="flex items-center gap-1 text-sm font-semibold text-amber-700 hover:text-amber-900"
                   >
-                    <Pencil size={16} />
-                  </button>
-                  <button
-                    onClick={() => setDeleteId(item.id)}
-                    aria-label={`Delete ${item.name}`}
-                    className="rounded-lg border border-slate-200 p-2 text-red-600 hover:bg-red-50"
-                  >
-                    <Trash2 size={16} />
+                    View details <ChevronDown size={16} />
                   </button>
                 </div>
-              </div>
+              </article>
+            ))}
+          </section>
+        )}
 
-              <div className="mt-5 grid grid-cols-2 gap-3">
-                <div className="rounded-xl bg-slate-50 p-3">
-                  <p className="text-xs text-slate-500">Students</p>
-                  <p className="mt-1 text-xl font-bold">{item.students}</p>
-                </div>
-                <div className="rounded-xl bg-slate-50 p-3">
-                  <p className="text-xs text-slate-500">Capacity / Section</p>
-                  <p className="mt-1 text-xl font-bold">{item.capacity}</p>
-                </div>
-              </div>
-
-              <div className="mt-5">
-                <p className="mb-2 text-sm font-semibold text-slate-700">
-                  Sections
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {item.sections.map((section) => (
-                    <button
-                      key={section}
-                      onClick={() => setSelectedClass(item)}
-                      className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100"
-                    >
-                      Section {section}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4">
-                <div>
-                  <p className="text-xs text-slate-500">Class Teacher</p>
-                  <p className="mt-1 text-sm font-semibold text-slate-800">
-                    {item.teacher}
-                  </p>
-                </div>
-                <button
-                  onClick={() => setSelectedClass(item)}
-                  className="flex items-center gap-1 text-sm font-semibold text-amber-700 hover:text-amber-900"
-                >
-                  View details <ChevronDown size={16} />
-                </button>
-              </div>
-            </article>
-          ))}
-        </section>
-
-        {filteredClasses.length === 0 && (
+        {!loading && filteredClasses.length === 0 && (
           <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center">
             <School className="mx-auto text-slate-400" size={32} />
             <p className="mt-3 font-semibold">No classes found</p>
@@ -537,8 +596,7 @@ export default function ClassesPage() {
           <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
             <h2 className="text-lg font-bold">Delete this class?</h2>
             <p className="mt-2 text-sm leading-6 text-slate-500">
-              This removes the class from the current demo list. It does not
-              delete student records in a backend.
+              Are you sure you want to remove this class from the system?
             </p>
             <div className="mt-5 flex justify-end gap-3">
               <button

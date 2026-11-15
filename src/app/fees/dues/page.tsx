@@ -1,14 +1,12 @@
-
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Search,
   Download,
   SlidersHorizontal,
-  // Clock3,
   IndianRupee,
   Users,
   AlertTriangle,
@@ -16,13 +14,16 @@ import {
   CircleCheck,
   CalendarDays,
   X,
+  Loader2,
 } from "lucide-react";
+import { api } from "@/lib/api";
 
 type DueStatus = "Overdue" | "Due Soon" | "Partial";
 
 type DueRecord = {
   id: string;
   studentId: string;
+  mongoStudentId?: string;
   name: string;
   course: string;
   semester: string;
@@ -31,75 +32,6 @@ type DueRecord = {
   dueDate: string;
   status: DueStatus;
 };
-
-const initialDues: DueRecord[] = [
-  {
-    id: "DUE-1001",
-    studentId: "STU001",
-    name: "Aarav Sharma",
-    course: "B.Tech - CSE",
-    semester: "Semester 5",
-    totalFee: 85000,
-    paid: 55000,
-    dueDate: "2026-10-10",
-    status: "Overdue",
-  },
-  {
-    id: "DUE-1002",
-    studentId: "STU002",
-    name: "Priya Verma",
-    course: "B.Tech - IT",
-    semester: "Semester 3",
-    totalFee: 80000,
-    paid: 60000,
-    dueDate: "2026-10-29",
-    status: "Due Soon",
-  },
-  {
-    id: "DUE-1003",
-    studentId: "STU003",
-    name: "Rahul Patel",
-    course: "BBA",
-    semester: "Semester 1",
-    totalFee: 54000,
-    paid: 24000,
-    dueDate: "2026-10-15",
-    status: "Overdue",
-  },
-  {
-    id: "DUE-1004",
-    studentId: "STU004",
-    name: "Sneha Gupta",
-    course: "B.Com",
-    semester: "Semester 3",
-    totalFee: 41000,
-    paid: 26000,
-    dueDate: "2026-11-05",
-    status: "Partial",
-  },
-  {
-    id: "DUE-1005",
-    studentId: "STU005",
-    name: "Karan Mehta",
-    course: "B.Tech - CSE",
-    semester: "Semester 7",
-    totalFee: 85000,
-    paid: 65000,
-    dueDate: "2026-10-20",
-    status: "Overdue",
-  },
-  {
-    id: "DUE-1006",
-    studentId: "STU006",
-    name: "Neha Gupta",
-    course: "B.Sc - Physics",
-    semester: "Semester 1",
-    totalFee: 46500,
-    paid: 30000,
-    dueDate: "2026-11-12",
-    status: "Partial",
-  },
-];
 
 const formatMoney = (amount: number) =>
   new Intl.NumberFormat("en-IN", {
@@ -118,13 +50,70 @@ const formatDate = (date: string) =>
 export default function PendingDuesPage() {
   const router = useRouter();
 
-  const [dues, setDues] = useState<DueRecord[]>(initialDues);
+  const [dues, setDues] = useState<DueRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [userRole, setUserRole] = useState<string>("ADMIN");
+
   const [search, setSearch] = useState("");
   const [courseFilter, setCourseFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
   const [sortBy, setSortBy] = useState("dueDate");
   const [selectedDue, setSelectedDue] = useState<DueRecord | null>(null);
   const [notice, setNotice] = useState("");
+
+  const canCollect = ["SUPER_ADMIN", "ADMIN", "ACCOUNTANT"].includes(userRole);
+
+  const fetchDues = async () => {
+    try {
+      setLoading(true);
+      setError("");
+      const res = await api.get("/fees/dues");
+      if (res && res.dues) {
+        const mapped: DueRecord[] = res.dues.map((d: any) => {
+          let s: DueStatus = "Partial";
+          const now = new Date();
+          const due = d.dueDate ? new Date(d.dueDate) : new Date();
+          if (due < now) s = "Overdue";
+          else if (due.getTime() - now.getTime() < 7 * 24 * 60 * 60 * 1000) s = "Due Soon";
+
+          const total = Number(d.totalFee !== undefined ? d.totalFee : (d.totalAmount || d.amount || 0));
+          const paid = Number(d.amountPaid !== undefined ? d.amountPaid : 0);
+
+          return {
+            id: d._id || d.id || "DUE",
+            studentId: d.student?.rollNumber || d.student?.studentId || d.rollNumber || "—",
+            mongoStudentId: d.student?._id || (typeof d.student === "string" ? d.student : undefined),
+            name: d.student?.name || d.studentName || "Student",
+            course: d.className ? (d.className.startsWith("Class") ? d.className : `Class ${d.className}`) : (d.student?.className ? `Class ${d.student.className}` : "General"),
+            semester: d.feeType || "Annual Fee",
+            totalFee: total,
+            paid: paid,
+            dueDate: d.dueDate ? d.dueDate.slice(0, 10) : new Date().toISOString().slice(0, 10),
+            status: s,
+          };
+        });
+        setDues(mapped);
+      } else {
+        setDues([]);
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to load fee dues.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    try {
+      const userStr = localStorage.getItem("eduflow-user");
+      if (userStr) {
+        const u = JSON.parse(userStr);
+        if (u.role) setUserRole(u.role);
+      }
+    } catch {}
+    fetchDues();
+  }, []);
 
   const getBalance = (due: DueRecord) =>
     Math.max(0, due.totalFee - due.paid);
@@ -180,44 +169,41 @@ export default function PendingDuesPage() {
     (due) => getBalance(due) > 0
   ).length;
 
-  function recordDemoPayment(due: DueRecord) {
+  async function recordPayment(due: DueRecord) {
+    if (!canCollect) {
+      alert("Only accountants and administrators can record fee payments.");
+      return;
+    }
+
     const balance = getBalance(due);
     const rawAmount = window.prompt(
-      `Outstanding balance: ${formatMoney(balance)}\nEnter the demo payment amount:`
+      `Outstanding balance: ${formatMoney(balance)}\nEnter payment amount to collect:`
     );
 
     if (rawAmount === null) return;
-
     const amount = Number(rawAmount);
 
-    if (
-      !Number.isFinite(amount) ||
-      amount <= 0 ||
-      amount > balance
-    ) {
+    if (!Number.isFinite(amount) || amount <= 0 || amount > balance) {
       setNotice("Enter a valid amount not exceeding the outstanding balance.");
       return;
     }
 
-    setDues((previous) =>
-      previous.map((item) =>
-        item.id === due.id
-          ? {
-              ...item,
-              paid: item.paid + amount,
-              status:
-                item.paid + amount >= item.totalFee
-                  ? item.status
-                  : item.status,
-            }
-          : item
-      )
-    );
+    try {
+      await api.post("/fees/pay", {
+        studentId: due.mongoStudentId || due.studentId,
+        studentName: due.name,
+        className: due.course,
+        amount,
+        feeType: due.semester || "Tuition Fee",
+        paymentMethod: "Cash",
+      });
 
-    setNotice(
-      `Demo payment of ${formatMoney(amount)} recorded for ${due.name}.`
-    );
-    setSelectedDue(null);
+      setNotice(`Payment of ${formatMoney(amount)} recorded successfully in MongoDB!`);
+      setSelectedDue(null);
+      await fetchDues();
+    } catch (err: any) {
+      setNotice(err.message || "Failed to record payment.");
+    }
   }
 
   function exportCSV() {
@@ -280,14 +266,11 @@ export default function PendingDuesPage() {
               Back
             </button>
 
-            
-
             <h1 className="text-2xl font-bold tracking-tight text-[#10233f] sm:text-3xl">
               Pending Fee Dues
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-              Monitor outstanding balances, identify overdue accounts and
-              record demo payments for follow-up.
+              Monitor outstanding balances and record fee collections.
             </p>
           </div>
 
@@ -299,6 +282,12 @@ export default function PendingDuesPage() {
             Export CSV
           </button>
         </header>
+
+        {error && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            {error}
+          </div>
+        )}
 
         {notice && (
           <div
@@ -320,7 +309,7 @@ export default function PendingDuesPage() {
           <MetricCard
             title="Total Outstanding"
             value={formatMoney(totalOutstanding)}
-            subtitle="Across demo records"
+            subtitle="Across student accounts"
             icon={<IndianRupee size={21} />}
             accent="yellow"
           />
@@ -359,7 +348,7 @@ export default function PendingDuesPage() {
                   Overdue payments require attention
                 </h2>
                 <p className="mt-1 text-sm leading-5 text-slate-500">
-                  {overdueDues.length} demo account(s) are marked overdue.
+                  {overdueDues.length} account(s) are marked overdue.
                   Review the balances and follow up.
                 </p>
               </div>
@@ -399,12 +388,12 @@ export default function PendingDuesPage() {
               onChange={(event) => setCourseFilter(event.target.value)}
               className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm outline-none focus:border-amber-400"
             >
-              <option value="All">All Courses</option>
+              <option value="All">All Courses / Classes</option>
+              <option value="Class 10">Class 10</option>
+              <option value="Class 9">Class 9</option>
+              <option value="Class 11">Class 11</option>
+              <option value="Class 12">Class 12</option>
               <option value="B.Tech - CSE">B.Tech - CSE</option>
-              <option value="B.Tech - IT">B.Tech - IT</option>
-              <option value="BBA">BBA</option>
-              <option value="B.Com">B.Com</option>
-              <option value="B.Sc - Physics">B.Sc - Physics</option>
             </select>
 
             <select
@@ -453,9 +442,6 @@ export default function PendingDuesPage() {
                 Review fee balances and payment deadlines
               </p>
             </div>
-            <span className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600">
-              Demo records
-            </span>
           </div>
 
           <div className="overflow-x-auto">
@@ -474,7 +460,14 @@ export default function PendingDuesPage() {
               </thead>
 
               <tbody className="divide-y divide-slate-100">
-                {filteredDues.map((due) => {
+                {loading ? (
+                  <tr>
+                    <td colSpan={8} className="px-5 py-14 text-center text-slate-500">
+                      <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin text-amber-500" />
+                      Loading pending dues...
+                    </td>
+                  </tr>
+                ) : filteredDues.map((due) => {
                   const balance = getBalance(due);
 
                   return (
@@ -539,19 +532,21 @@ export default function PendingDuesPage() {
                           >
                             <Eye size={16} />
                           </button>
-                          <button
-                            onClick={() => recordDemoPayment(due)}
-                            className="whitespace-nowrap rounded-lg bg-[#10233f] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#1b365b]"
-                          >
-                            Record Payment
-                          </button>
+                          {canCollect && (
+                            <button
+                              onClick={() => recordPayment(due)}
+                              className="whitespace-nowrap rounded-lg bg-[#10233f] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#1b365b]"
+                            >
+                              Record Payment
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
                   );
                 })}
 
-                {filteredDues.length === 0 && (
+                {!loading && filteredDues.length === 0 && (
                   <tr>
                     <td
                       colSpan={8}
@@ -565,14 +560,14 @@ export default function PendingDuesPage() {
                         No outstanding accounts found
                       </p>
                       <p className="mt-1 text-sm text-slate-500">
-                        Try changing the search terms or filters.
+                        All student fees are fully settled.
                       </p>
                     </td>
                   </tr>
                 )}
               </tbody>
 
-              {filteredDues.length > 0 && (
+              {!loading && filteredDues.length > 0 && (
                 <tfoot className="border-t border-slate-200 bg-slate-50">
                   <tr>
                     <td
@@ -599,8 +594,7 @@ export default function PendingDuesPage() {
           </div>
 
           <div className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500">
-            Demo data only. Payment changes are held in page state and are not
-            saved to the backend.
+            Connected to EduFlow Finance Engine.
           </div>
         </section>
 
@@ -670,12 +664,14 @@ export default function PendingDuesPage() {
                 >
                   Close
                 </button>
-                <button
-                  onClick={() => recordDemoPayment(selectedDue)}
-                  className="rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-amber-300"
-                >
-                  Record Demo Payment
-                </button>
+                {canCollect && (
+                  <button
+                    onClick={() => recordPayment(selectedDue)}
+                    className="rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-amber-300"
+                  >
+                    Record Payment
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -683,7 +679,7 @@ export default function PendingDuesPage() {
 
         <footer className="flex flex-wrap justify-between gap-2 py-2 text-xs text-slate-400">
           <span>EduFlow ERP · Finance Management</span>
-          <span>Pending Dues · Demo Environment</span>
+          <span>Pending Dues ·Finance Engine</span>
         </footer>
       </div>
     </main>

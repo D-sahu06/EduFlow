@@ -7,6 +7,11 @@ export const DEFAULT_ROLES: {
   description: string;
 }[] = [
   {
+    id: "USER",
+    name: "User",
+    description: "View assigned examination schedules and personal updates",
+  },
+  {
     id: "SUPER_ADMIN",
     name: "Super Admin",
     description: "Complete ERP system control",

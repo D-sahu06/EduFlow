@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -18,7 +17,9 @@ import {
   CheckCircle2,
   CalendarDays,
   RotateCcw,
+  Loader2,
 } from "lucide-react";
+import { api } from "@/lib/api";
 
 type PaymentMethod = "Cash" | "UPI" | "Bank Transfer" | "Card";
 
@@ -29,57 +30,11 @@ type Payment = {
   course: string;
   date: string;
   amount: number;
+  pendingDues?: number;
   method: PaymentMethod;
   reference: string;
   note: string;
 };
-
-const initialPayments: Payment[] = [
-  {
-    id: "RCP-2026-1001",
-    studentId: "STU001",
-    studentName: "Aarav Sharma",
-    course: "B.Tech - CSE",
-    date: "2026-10-26",
-    amount: 25000,
-    method: "UPI",
-    reference: "UPI-DEMO-1001",
-    note: "Semester fee installment",
-  },
-  {
-    id: "RCP-2026-1002",
-    studentId: "STU002",
-    studentName: "Priya Verma",
-    course: "B.Tech - IT",
-    date: "2026-10-25",
-    amount: 18000,
-    method: "Bank Transfer",
-    reference: "BANK-DEMO-1002",
-    note: "Tuition fee",
-  },
-  {
-    id: "RCP-2026-1003",
-    studentId: "STU003",
-    studentName: "Rahul Patel",
-    course: "BBA",
-    date: "2026-10-25",
-    amount: 12000,
-    method: "Cash",
-    reference: "CASH-DEMO-1003",
-    note: "Fee installment",
-  },
-  {
-    id: "RCP-2026-1004",
-    studentId: "STU004",
-    studentName: "Sneha Gupta",
-    course: "B.Com",
-    date: "2026-10-24",
-    amount: 15000,
-    method: "UPI",
-    reference: "UPI-DEMO-1004",
-    note: "Semester fee installment",
-  },
-];
 
 const money = (amount: number) =>
   new Intl.NumberFormat("en-IN", {
@@ -96,9 +51,18 @@ const today = () => {
   return `${year}-${month}-${day}`;
 };
 
+const defaultDueDate = () => {
+  const date = new Date();
+  date.setDate(date.getDate() + 30);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
 const displayDate = (value: string) => {
   if (!value) return "—";
-  return new Date(`${value}T00:00:00`).toLocaleDateString("en-IN", {
+  return new Date(`${value.slice(0, 10)}T00:00:00`).toLocaleDateString("en-IN", {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -111,6 +75,8 @@ const emptyForm = {
   course: "",
   date: today(),
   amount: "",
+  pendingDues: "",
+  dueDate: defaultDueDate(),
   method: "UPI" as PaymentMethod,
   reference: "",
   note: "",
@@ -119,7 +85,9 @@ const emptyForm = {
 export default function ReceiptsPage() {
   const router = useRouter();
 
-  const [payments, setPayments] = useState<Payment[]>(initialPayments);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [structures, setStructures] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(emptyForm);
   const [showForm, setShowForm] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
@@ -129,6 +97,80 @@ export default function ReceiptsPage() {
   const [toDate, setToDate] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [userRole, setUserRole] = useState<string>("ADMIN");
+
+  const canRecord = ["SUPER_ADMIN", "ADMIN", "ACCOUNTANT"].includes(userRole);
+
+  const fetchStructures = async () => {
+    try {
+      const res = await api.get("/fees/structures");
+      if (res && res.structures) {
+        setStructures(res.structures);
+      }
+    } catch {}
+  };
+
+  const fetchPayments = async () => {
+    try {
+      setLoading(true);
+      setError("");
+      const res = await api.get("/fees/receipts");
+      if (res && res.receipts) {
+        const mapped: Payment[] = res.receipts.map((r: any) => ({
+          id: r.receiptNumber || r._id || "RCP",
+          studentId: r.student?.rollNumber || r.student?.studentId || r.rollNumber || "—",
+          studentName: r.student?.name || r.studentName || "Student",
+          course: r.className || r.student?.className || "General",
+          date: r.paymentDate
+            ? r.paymentDate.slice(0, 10)
+            : r.createdAt
+              ? r.createdAt.slice(0, 10)
+              : today(),
+          amount: Number(r.amountPaid || r.amount || 0),
+          pendingDues: Number(r.pendingDues || 0),
+          method: (r.paymentMethod as PaymentMethod) || "Cash",
+          reference: r.transactionId || r.receiptNumber || "—",
+          note: r.remarks || r.feeType || "Fee collection",
+        }));
+        setPayments(mapped);
+      } else {
+        setPayments([]);
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to load fee payment receipts.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    try {
+      const userStr = localStorage.getItem("eduflow-user");
+      if (userStr) {
+        const u = JSON.parse(userStr);
+        if (u.role) setUserRole(u.role);
+      }
+    } catch {}
+    fetchPayments();
+    fetchStructures();
+  }, []);
+
+  const matchedStructure = useMemo(() => {
+    if (!form.course.trim() || structures.length === 0) return null;
+    const cleanCourse = form.course.replace(/^Class\s+/i, "").trim().toLowerCase();
+    return (
+      structures.find((s) => {
+        const sName = String(s.className || "").replace(/^Class\s+/i, "").trim().toLowerCase();
+        return sName === cleanCourse || sName.includes(cleanCourse) || cleanCourse.includes(sName);
+      }) || null
+    );
+  }, [form.course, structures]);
+
+  const suggestedDues = useMemo(() => {
+    if (!matchedStructure) return null;
+    const amt = Number(form.amount || 0);
+    return Math.max(0, (matchedStructure.totalAmount || 0) - amt);
+  }, [matchedStructure, form.amount]);
 
   const filteredPayments = useMemo(() => {
     return payments
@@ -176,19 +218,23 @@ export default function ReceiptsPage() {
     setShowForm(true);
   }
 
-  function submitPayment(event: React.FormEvent<HTMLFormElement>) {
+  async function submitPayment(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
     setNotice("");
+
+    if (!canRecord) {
+      setError("Only accountants and administrators can record fee payments.");
+      return;
+    }
 
     const amount = Number(form.amount);
 
     if (
       !form.studentId.trim() ||
-      !form.studentName.trim() ||
-      !form.course.trim()
+      !form.studentName.trim()
     ) {
-      setError("Please fill in the student ID, name and course.");
+      setError("Please fill in the student ID and name.");
       return;
     }
 
@@ -197,40 +243,36 @@ export default function ReceiptsPage() {
       return;
     }
 
-    if (!form.date || form.date > today()) {
-      setError("Please select a valid payment date.");
-      return;
+    try {
+      const payload: any = {
+        studentId: form.studentId.trim(),
+        studentName: form.studentName.trim(),
+        className: form.course.trim(),
+        paymentDate: form.date,
+        amount,
+        feeType: form.note.trim() || "Tuition Fee",
+        remarks: form.note.trim(),
+        paymentMethod: form.method,
+        transactionId: form.reference.trim() || undefined,
+      };
+
+      if (form.pendingDues !== "" && !isNaN(Number(form.pendingDues))) {
+        payload.pendingDues = Math.max(0, Number(form.pendingDues));
+      }
+      if (form.dueDate) {
+        payload.dueDate = form.dueDate;
+      }
+
+      const res = await api.post("/fees/pay", payload);
+
+      const receiptId = res.receipt?.receiptNumber || `RCP-${Date.now()}`;
+      setShowForm(false);
+      setForm(emptyForm);
+      setNotice(res.message || `Payment receipt ${receiptId} recorded successfully.`);
+      await fetchPayments();
+    } catch (err: any) {
+      setError(err.message || "Failed to record payment.");
     }
-
-    if (
-      form.method !== "Cash" &&
-      !form.reference.trim()
-    ) {
-      setError("Enter the transaction/reference number for this payment method.");
-      return;
-    }
-
-    const receiptId = `RCP-${new Date().getFullYear()}-${String(
-      Date.now()
-    ).slice(-6)}`;
-
-    const newPayment: Payment = {
-      id: receiptId,
-      studentId: form.studentId.trim(),
-      studentName: form.studentName.trim(),
-      course: form.course.trim(),
-      date: form.date,
-      amount,
-      method: form.method,
-      reference: form.reference.trim() || "—",
-      note: form.note.trim() || "Fee payment",
-    };
-
-    setPayments((previous) => [newPayment, ...previous]);
-    setShowForm(false);
-    setForm(emptyForm);
-    setNotice(`Demo receipt ${receiptId} created successfully.`);
-    setSelectedPayment(newPayment);
   }
 
   function exportCSV() {
@@ -241,6 +283,7 @@ export default function ReceiptsPage() {
       "Course",
       "Payment Date",
       "Amount",
+      "Pending Dues",
       "Payment Method",
       "Transaction Reference",
       "Note",
@@ -253,6 +296,7 @@ export default function ReceiptsPage() {
       payment.course,
       payment.date,
       payment.amount,
+      payment.pendingDues || 0,
       payment.method,
       payment.reference,
       payment.note,
@@ -320,7 +364,7 @@ export default function ReceiptsPage() {
         <div class="receipt">
           <div class="brand">
             <h1>EduFlow ERP</h1>
-            <p>FEE PAYMENT RECEIPT · DEMO</p>
+            <p>OFFICIAL FEE PAYMENT RECEIPT</p>
           </div>
           <div class="row"><span class="label">Receipt Number</span><strong>${escapeHtml(payment.id)}</strong></div>
           <div class="row"><span class="label">Student Name</span><strong>${escapeHtml(payment.studentName)}</strong></div>
@@ -330,11 +374,11 @@ export default function ReceiptsPage() {
           <div class="row"><span class="label">Payment Method</span><strong>${escapeHtml(payment.method)}</strong></div>
           <div class="row"><span class="label">Transaction Reference</span><strong>${escapeHtml(payment.reference)}</strong></div>
           <div class="row"><span class="label">Description</span><strong>${escapeHtml(payment.note)}</strong></div>
+          ${payment.pendingDues !== undefined && payment.pendingDues > 0 ? `<div class="row"><span class="label">Remaining Pending Dues</span><strong style="color: #b45309;">${escapeHtml(money(payment.pendingDues))}</strong></div>` : ""}
           <div class="amount">Amount Received: ${escapeHtml(money(payment.amount))}</div>
           <div class="footer">
-            This is a demonstration receipt generated by the EduFlow ERP frontend.
-            It is not proof of an actual payment. Connect and verify payment through
-            the authorized backend before using receipts operationally.
+            This receipt was generated by the EduFlow ERP Financial Management Module.
+            All transactions are permanently registered in the institution database.
           </div>
         </div>
         <script>window.onload = () => window.print();</script>
@@ -366,21 +410,23 @@ export default function ReceiptsPage() {
               Back
             </button>
 
-               <h1 className="text-2xl font-bold tracking-tight text-[#10233f] sm:text-3xl">
+            <h1 className="text-2xl font-bold tracking-tight text-[#10233f] sm:text-3xl">
               Receipts & Payments
             </h1>
             <p className="mt-2 text-sm text-slate-500">
-              Record fee payments, review transactions and print demo receipts.
+              Record fee payments, review transactions and print official receipts.
             </p>
           </div>
 
-          <button
-            onClick={openNewPayment}
-            className="inline-flex items-center justify-center gap-2 self-start rounded-xl bg-amber-400 px-4 py-3 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-amber-300 sm:self-auto"
-          >
-            <Plus size={18} />
-            Record Payment
-          </button>
+          {canRecord && (
+            <button
+              onClick={openNewPayment}
+              className="inline-flex items-center justify-center gap-2 self-start rounded-xl bg-amber-400 px-4 py-3 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-amber-300 sm:self-auto"
+            >
+              <Plus size={18} />
+              Record Payment
+            </button>
+          )}
         </header>
 
         {notice && (
@@ -400,7 +446,7 @@ export default function ReceiptsPage() {
           <SummaryCard
             title="Total Recorded Collection"
             value={money(totalCollected)}
-            note="All demo transactions"
+            note="All registered transactions"
             icon={<Wallet size={21} />}
           />
           <SummaryCard
@@ -507,7 +553,7 @@ export default function ReceiptsPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-2375 text-left text-sm">
+            <table className="w-full min-w-[760px] text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-5 py-4">Receipt</th>
@@ -520,11 +566,18 @@ export default function ReceiptsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredPayments.map((payment) => (
+                {loading ? (
+                  <tr>
+                    <td colSpan={7} className="px-5 py-14 text-center text-slate-500">
+                      <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin text-amber-500" />
+                      Loading receipts...
+                    </td>
+                  </tr>
+                ) : filteredPayments.map((payment) => (
                   <tr key={payment.id} className="transition hover:bg-slate-50">
-                    <td className="whitespace-nowrap px-5 py-4">
-                      <p className="font-bold text-[#10233f]">{payment.id}</p>
-                      <p className="mt-1 text-xs text-slate-500">{payment.note}</p>
+                    <td className="px-5 py-4">
+                      <p className="whitespace-nowrap font-bold text-[#10233f]">{payment.id}</p>
+                      <p className="mt-1 max-w-[220px] text-xs text-slate-500">{payment.note}</p>
                     </td>
                     <td className="px-4 py-4">
                       <p className="whitespace-nowrap font-semibold text-slate-900">
@@ -550,8 +603,13 @@ export default function ReceiptsPage() {
                     <td className="whitespace-nowrap px-4 py-4 text-slate-500">
                       {payment.reference}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-4 font-bold text-[#10233f]">
-                      {money(payment.amount)}
+                    <td className="whitespace-nowrap px-4 py-4">
+                      <p className="font-bold text-[#10233f]">{money(payment.amount)}</p>
+                      {payment.pendingDues !== undefined && payment.pendingDues > 0 && (
+                        <p className="mt-0.5 text-xs font-semibold text-amber-700">
+                          Due: {money(payment.pendingDues)}
+                        </p>
+                      )}
                     </td>
                     <td className="px-5 py-4">
                       <div className="flex justify-end gap-2">
@@ -576,7 +634,7 @@ export default function ReceiptsPage() {
                   </tr>
                 ))}
 
-                {filteredPayments.length === 0 && (
+                {!loading && filteredPayments.length === 0 && (
                   <tr>
                     <td colSpan={7} className="px-5 py-14 text-center">
                       <Receipt size={30} className="mx-auto mb-3 text-slate-300" />
@@ -584,7 +642,7 @@ export default function ReceiptsPage() {
                         No payment records found
                       </p>
                       <p className="mt-1 text-sm text-slate-500">
-                        Try different filters or record a new demo payment.
+                        Try different filters or record a new payment.
                       </p>
                     </td>
                   </tr>
@@ -594,7 +652,7 @@ export default function ReceiptsPage() {
           </div>
 
           <div className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500">
-            Demo environment · Records are held in page state and reset on refresh.
+            Connected to EduFlow.
           </div>
         </section>
 
@@ -616,7 +674,7 @@ export default function ReceiptsPage() {
                     Record Fee Payment
                   </h2>
                   <p className="mt-1 text-sm text-slate-500">
-                    Enter details to create a demo receipt.
+                    Enter details to save and generate a receipt.
                   </p>
                 </div>
                 <button
@@ -630,14 +688,14 @@ export default function ReceiptsPage() {
 
               <form onSubmit={submitPayment} className="space-y-5 p-5">
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <FormField label="Student ID">
+                  <FormField label="Student ID / Roll No">
                     <input
                       required
                       value={form.studentId}
                       onChange={(event) =>
                         setForm({ ...form, studentId: event.target.value })
                       }
-                      placeholder="e.g. STU007"
+                      placeholder="e.g. STU001"
                       className="payment-input"
                     />
                   </FormField>
@@ -657,21 +715,30 @@ export default function ReceiptsPage() {
                   <FormField label="Course / Class">
                     <input
                       required
+                      list="course-structure-options"
                       value={form.course}
                       onChange={(event) =>
                         setForm({ ...form, course: event.target.value })
                       }
-                      placeholder="e.g. B.Tech - CSE"
+                      placeholder="e.g. Class 10 or B.Tech"
                       className="payment-input"
                     />
+                    <datalist id="course-structure-options">
+                      {structures.map((s) => (
+                        <option
+                          key={s._id || s.id}
+                          value={s.className.startsWith("Class") ? s.className : `Class ${s.className}`}
+                        />
+                      ))}
+                    </datalist>
                   </FormField>
 
                   <FormField label="Payment Date">
                     <div className="relative">
-                      <CalendarDays
+                      {/* <CalendarDays
                         size={16}
                         className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                      />
+                      /> */}
                       <input
                         required
                         type="date"
@@ -700,6 +767,47 @@ export default function ReceiptsPage() {
                     />
                   </FormField>
 
+                  <FormField label="Pending Dues (₹)">
+                    <div className="space-y-1">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={form.pendingDues}
+                        onChange={(event) =>
+                          setForm({ ...form, pendingDues: event.target.value })
+                        }
+                        placeholder={
+                          suggestedDues !== null && suggestedDues > 0
+                            ? `e.g. ${suggestedDues}`
+                            : "Enter pending dues (or 0 if none)"
+                        }
+                        className="payment-input"
+                      />
+                      {matchedStructure && (
+                        <div className="flex flex-wrap items-center justify-between gap-1 text-xs text-slate-500 pt-0.5">
+                          <span>
+                            Structure: <strong className="text-slate-700">{money(matchedStructure.totalAmount)}</strong>
+                            {suggestedDues !== null && (
+                              <> · Remaining: <strong className="text-amber-700">{money(suggestedDues)}</strong></>
+                            )}
+                          </span>
+                          {suggestedDues !== null && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setForm({ ...form, pendingDues: String(suggestedDues) })
+                              }
+                              className="font-semibold text-amber-600 hover:text-amber-700 underline"
+                            >
+                              Auto-fill ₹{suggestedDues}
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </FormField>
+
                   <FormField label="Payment Method">
                     <select
                       value={form.method}
@@ -718,6 +826,17 @@ export default function ReceiptsPage() {
                     </select>
                   </FormField>
 
+                  <FormField label="Due Date for Remaining Fees">
+                    <input
+                      type="date"
+                      value={form.dueDate}
+                      onChange={(event) =>
+                        setForm({ ...form, dueDate: event.target.value })
+                      }
+                      className="payment-input"
+                    />
+                  </FormField>
+
                   {form.method !== "Cash" && (
                     <div className="sm:col-span-2">
                       <FormField label="Transaction / Reference Number">
@@ -727,7 +846,7 @@ export default function ReceiptsPage() {
                           onChange={(event) =>
                             setForm({ ...form, reference: event.target.value })
                           }
-                          placeholder="Enter demo transaction reference"
+                          placeholder="Enter transaction reference"
                           className="payment-input"
                         />
                       </FormField>
@@ -735,14 +854,14 @@ export default function ReceiptsPage() {
                   )}
 
                   <div className="sm:col-span-2">
-                    <FormField label="Payment Description">
+                    <FormField label="Payment Description / Fee Type">
                       <textarea
                         rows={3}
                         value={form.note}
                         onChange={(event) =>
                           setForm({ ...form, note: event.target.value })
                         }
-                        placeholder="e.g. Semester fee installment"
+                        placeholder="e.g. Tuition Fee"
                         className="payment-input"
                       />
                     </FormField>
@@ -758,19 +877,6 @@ export default function ReceiptsPage() {
                   </p>
                 )}
 
-                <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-                  <p className="text-sm font-semibold text-amber-900">
-                    Demo receipt preview
-                  </p>
-                  <p className="mt-1 text-2xl font-bold text-[#10233f]">
-                    {money(Number(form.amount) || 0)}
-                  </p>
-                  <p className="mt-1 text-xs leading-5 text-amber-800">
-                    This form records a frontend demo entry only. It does not
-                    verify or collect real money.
-                  </p>
-                </div>
-
                 <div className="flex flex-wrap justify-end gap-3 border-t border-slate-100 pt-4">
                   <button
                     type="button"
@@ -784,7 +890,7 @@ export default function ReceiptsPage() {
                     className="inline-flex items-center gap-2 rounded-xl bg-amber-400 px-5 py-2.5 text-sm font-bold text-slate-950 hover:bg-amber-300"
                   >
                     <CheckCircle2 size={17} />
-                    Save Demo Payment
+                    Save & Generate Receipt
                   </button>
                 </div>
               </form>
@@ -804,7 +910,7 @@ export default function ReceiptsPage() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-amber-700">
-                    EduFlow ERP · Demo Receipt
+                    EduFlow ERP · Official Receipt
                   </p>
                   <h2
                     id="receipt-detail-title"
@@ -829,7 +935,7 @@ export default function ReceiptsPage() {
                 </p>
                 <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold">
                   <CheckCircle2 size={14} />
-                  Demo entry recorded
+                  Payment Confirmed
                 </div>
               </div>
 
@@ -841,6 +947,9 @@ export default function ReceiptsPage() {
                 <ReceiptRow label="Method" value={selectedPayment.method} />
                 <ReceiptRow label="Reference" value={selectedPayment.reference} />
                 <ReceiptRow label="Description" value={selectedPayment.note} />
+                {selectedPayment.pendingDues !== undefined && selectedPayment.pendingDues > 0 && (
+                  <ReceiptRow label="Remaining Pending Dues" value={money(selectedPayment.pendingDues)} />
+                )}
               </div>
 
               <div className="mt-6 flex justify-end">
@@ -858,7 +967,7 @@ export default function ReceiptsPage() {
 
         <footer className="flex flex-wrap justify-between gap-2 py-2 text-xs text-slate-400">
           <span>EduFlow ERP · Finance Management</span>
-          <span>Receipts & Payments · Demo Environment</span>
+          <span>Receipts & Payments · Finance Ledger</span>
         </footer>
       </div>
 

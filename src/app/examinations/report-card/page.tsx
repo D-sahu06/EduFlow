@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   Search,
@@ -9,8 +9,10 @@ import {
   FileText,
   CheckCircle,
   XCircle,
-  ArrowLeft
+  ArrowLeft,
+  Loader2,
 } from "lucide-react";
+import { api } from "@/lib/api";
 
 type Subject = {
   name: string;
@@ -28,72 +30,122 @@ type Student = {
   subjects: Subject[];
 };
 
-const students: Student[] = [
-  {
-    id: "1",
-    name: "Aarav Sharma",
-    rollNo: "STU001",
-    className: "Class 10",
-    section: "A",
-    exam: "Half Yearly Examination",
-    subjects: [
-      { name: "English", maxMarks: 100, obtainedMarks: 85 },
-      { name: "Mathematics", maxMarks: 100, obtainedMarks: 92 },
-      { name: "Science", maxMarks: 100, obtainedMarks: 78 },
-      { name: "Social Science", maxMarks: 100, obtainedMarks: 88 },
-      { name: "Hindi", maxMarks: 100, obtainedMarks: 81 },
-    ],
-  },
-  {
-    id: "2",
-    name: "Priya Verma",
-    rollNo: "STU002",
-    className: "Class 10",
-    section: "A",
-    exam: "Half Yearly Examination",
-    subjects: [
-      { name: "English", maxMarks: 100, obtainedMarks: 90 },
-      { name: "Mathematics", maxMarks: 100, obtainedMarks: 95 },
-      { name: "Science", maxMarks: 100, obtainedMarks: 91 },
-      { name: "Social Science", maxMarks: 100, obtainedMarks: 87 },
-      { name: "Hindi", maxMarks: 100, obtainedMarks: 89 },
-    ],
-  },
-  {
-    id: "3",
-    name: "Rahul Patel",
-    rollNo: "STU003",
-    className: "Class 10",
-    section: "B",
-    exam: "Half Yearly Examination",
-    subjects: [
-      { name: "English", maxMarks: 100, obtainedMarks: 42 },
-      { name: "Mathematics", maxMarks: 100, obtainedMarks: 35 },
-      { name: "Science", maxMarks: 100, obtainedMarks: 48 },
-      { name: "Social Science", maxMarks: 100, obtainedMarks: 55 },
-      { name: "Hindi", maxMarks: 100, obtainedMarks: 61 },
-    ],
-  },
-];
-
 export default function ReportCardPage() {
-  const [selectedStudentId, setSelectedStudentId] = useState("1");
+  const [studentsList, setStudentsList] = useState<{ id: string; name: string; rollNo: string; className: string; section: string }[]>([]);
+  const [selectedStudentId, setSelectedStudentId] = useState<string>("");
   const [search, setSearch] = useState("");
-  const router = useRouter()
+  const [loadingStudents, setLoadingStudents] = useState(true);
+  const [loadingCard, setLoadingCard] = useState(false);
+  const [studentCard, setStudentCard] = useState<Student | null>(null);
+  const [error, setError] = useState("");
+  const router = useRouter();
+
+  // Load students
+  useEffect(() => {
+    async function loadStudents() {
+      try {
+        setLoadingStudents(true);
+        setError("");
+        const res = await api.get("/students");
+        if (res && res.students && res.students.length > 0) {
+          const mapped = res.students.map((s: any) => ({
+            id: s._id || s.id,
+            name: s.name,
+            rollNo: s.rollNumber || s.studentId || "N/A",
+            className: s.className ? (s.className.startsWith("Class") ? s.className : `Class ${s.className}`) : "Class 10",
+            section: s.section || "A",
+          }));
+          setStudentsList(mapped);
+          setSelectedStudentId(mapped[0].id);
+        } else {
+          setStudentsList([]);
+        }
+      } catch (err: any) {
+        setError(err.message || "Failed to load student list.");
+      } finally {
+        setLoadingStudents(false);
+      }
+    }
+    loadStudents();
+  }, []);
+
+  // Fetch report card when selectedStudentId changes
+  useEffect(() => {
+    if (!selectedStudentId) {
+      setStudentCard(null);
+      return;
+    }
+
+    async function fetchReportCard() {
+      try {
+        setLoadingCard(true);
+        setError("");
+        const sel = studentsList.find((s) => s.id === selectedStudentId);
+
+        const res = await api.get(`/exams/report-card/${selectedStudentId}`);
+        if (res && res.reportCard && res.reportCard.length > 0) {
+          const latestResult = res.reportCard[0];
+          const subjects: Subject[] =
+            latestResult.subjects && latestResult.subjects.length > 0
+              ? latestResult.subjects.map((sub: any) => ({
+                  name: sub.subjectName || "Subject",
+                  maxMarks: sub.maxMarks || 100,
+                  obtainedMarks: sub.marksObtained ?? 0,
+                }))
+              : [
+                  {
+                    name: latestResult.exam?.title || "Exam Subject",
+                    maxMarks: 100,
+                    obtainedMarks: latestResult.totalMarks || 0,
+                  },
+                ];
+
+          setStudentCard({
+            id: selectedStudentId,
+            name: latestResult.student?.name || sel?.name || "Student",
+            rollNo: latestResult.student?.rollNumber || latestResult.student?.studentId || sel?.rollNo || "N/A",
+            className: latestResult.student?.className || sel?.className || "Class 10",
+            section: sel?.section || "A",
+            exam: latestResult.exam?.title || "Term Examination",
+            subjects,
+          });
+        } else {
+          // If student has no recorded exam results yet, show base profile with 0 subjects
+          if (sel) {
+            setStudentCard({
+              id: sel.id,
+              name: sel.name,
+              rollNo: sel.rollNo,
+              className: sel.className,
+              section: sel.section,
+              exam: "Academic Assessment",
+              subjects: [],
+            });
+          } else {
+            setStudentCard(null);
+          }
+        }
+      } catch (err: any) {
+        setError(err.message || "Failed to load student report card.");
+      } finally {
+        setLoadingCard(false);
+      }
+    }
+
+    fetchReportCard();
+  }, [selectedStudentId, studentsList]);
 
   const filteredStudents = useMemo(
     () =>
-      students.filter(
+      studentsList.filter(
         (student) =>
           student.name.toLowerCase().includes(search.toLowerCase()) ||
           student.rollNo.toLowerCase().includes(search.toLowerCase())
       ),
-    [search]
+    [studentsList, search]
   );
 
-  const selectedStudent = students.find(
-    (student) => student.id === selectedStudentId
-  );
+  const selectedStudent = studentCard;
 
   const totalMarks =
     selectedStudent?.subjects.reduce(
@@ -111,9 +163,11 @@ export default function ReportCardPage() {
     totalMarks > 0 ? (obtainedMarks / totalMarks) * 100 : 0;
 
   const isPassed =
-    selectedStudent?.subjects.every(
-      (subject) => subject.obtainedMarks >= 35
-    ) ?? false;
+    selectedStudent && selectedStudent.subjects.length > 0
+      ? selectedStudent.subjects.every(
+          (subject) => subject.obtainedMarks >= Math.round(subject.maxMarks * 0.33)
+        )
+      : false;
 
   const grade =
     percentage >= 90
@@ -124,7 +178,7 @@ export default function ReportCardPage() {
       ? "B"
       : percentage >= 60
       ? "C"
-      : percentage >= 50
+      : percentage >= 33
       ? "D"
       : "F";
 
@@ -133,12 +187,12 @@ export default function ReportCardPage() {
       {/* Header */}
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-           <button
-                  onClick={() => router.back()}
-                  className="mb-5 inline-flex items-center cursor-pointer gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-                  >
-                  <ArrowLeft size={17} />
-                   Back
+          <button
+            onClick={() => router.back()}
+            className="mb-5 inline-flex items-center cursor-pointer gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+          >
+            <ArrowLeft size={17} />
+            Back
           </button>
           <h1 className="text-2xl font-bold text-slate-800">
             Report Card
@@ -150,13 +204,19 @@ export default function ReportCardPage() {
 
         <button
           onClick={() => window.print()}
-          disabled={!selectedStudent}
+          disabled={!selectedStudent || selectedStudent.subjects.length === 0}
           className="flex items-center justify-center gap-2 rounded-lg bg-yellow-300 px-5 py-2.5 text-sm font-bold text-slate-900 hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Printer size={18} />
           Print Report Card
         </button>
       </div>
+
+      {error && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          {error}
+        </div>
+      )}
 
       {/* Filters */}
       <div className="grid gap-4 rounded-xl border border-slate-200 bg-white p-5 md:grid-cols-2">
@@ -182,18 +242,25 @@ export default function ReportCardPage() {
           <label className="mb-2 block text-sm font-semibold text-slate-700">
             Select Student
           </label>
-          <select
-            value={selectedStudentId}
-            onChange={(e) => setSelectedStudentId(e.target.value)}
-            className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-yellow-400"
-          >
-            {filteredStudents.map((student) => (
-              <option key={student.id} value={student.id}>
-                {student.name} ({student.rollNo})
-              </option>
-            ))}
-          </select>
-          {filteredStudents.length === 0 && (
+          {loadingStudents ? (
+            <div className="flex items-center py-2.5 text-sm text-slate-500">
+              <Loader2 size={16} className="mr-2 animate-spin text-yellow-500" />
+              Loading students...
+            </div>
+          ) : (
+            <select
+              value={selectedStudentId}
+              onChange={(e) => setSelectedStudentId(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-yellow-400"
+            >
+              {filteredStudents.map((student) => (
+                <option key={student.id} value={student.id}>
+                  {student.name} ({student.rollNo}) - {student.className}
+                </option>
+              ))}
+            </select>
+          )}
+          {!loadingStudents && filteredStudents.length === 0 && (
             <p className="mt-1 text-xs text-red-500">
               No students found.
             </p>
@@ -202,7 +269,12 @@ export default function ReportCardPage() {
       </div>
 
       {/* Report Card */}
-      {selectedStudent ? (
+      {loadingCard ? (
+        <div className="flex items-center justify-center rounded-xl border border-slate-200 bg-white p-12 text-sm text-slate-500">
+          <Loader2 size={24} className="mr-3 animate-spin text-yellow-500" />
+          Loading report card...
+        </div>
+      ) : selectedStudent ? (
         <div
           id="report-card"
           className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm md:p-8"
@@ -258,88 +330,96 @@ export default function ReportCardPage() {
             Subject-wise Performance
           </h3>
 
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-125 border-collapse text-left text-sm">
-              <thead>
-                <tr className="bg-slate-900 text-white">
-                  <th className="p-3">Subject</th>
-                  <th className="p-3 text-center">Maximum Marks</th>
-                  <th className="p-3 text-center">Obtained Marks</th>
-                  <th className="p-3 text-center">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {selectedStudent.subjects.map((subject) => (
-                  <tr
-                    key={subject.name}
-                    className="border-b border-slate-200"
-                  >
-                    <td className="p-3 font-medium text-slate-700">
-                      {subject.name}
-                    </td>
-                    <td className="p-3 text-center">
-                      {subject.maxMarks}
-                    </td>
-                    <td className="p-3 text-center font-bold">
-                      {subject.obtainedMarks}
-                    </td>
-                    <td className="p-3 text-center">
-                      <span
-                        className={
-                          subject.obtainedMarks >= 35
-                            ? "font-semibold text-green-600"
-                            : "font-semibold text-red-600"
-                        }
-                      >
-                        {subject.obtainedMarks >= 35 ? "Pass" : "Fail"}
-                      </span>
-                    </td>
+          {selectedStudent.subjects.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-slate-200 p-8 text-center text-sm text-slate-500">
+              No examination marks entered for this student yet.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-125 border-collapse text-left text-sm">
+                <thead>
+                  <tr className="bg-slate-900 text-white">
+                    <th className="p-3">Subject</th>
+                    <th className="p-3 text-center">Maximum Marks</th>
+                    <th className="p-3 text-center">Obtained Marks</th>
+                    <th className="p-3 text-center">Status</th>
                   </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="bg-yellow-50 font-bold text-slate-900">
-                  <td className="p-3">Total</td>
-                  <td className="p-3 text-center">{totalMarks}</td>
-                  <td className="p-3 text-center">{obtainedMarks}</td>
-                  <td className="p-3 text-center">-</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {selectedStudent.subjects.map((subject) => (
+                    <tr
+                      key={subject.name}
+                      className="border-b border-slate-200"
+                    >
+                      <td className="p-3 font-medium text-slate-700">
+                        {subject.name}
+                      </td>
+                      <td className="p-3 text-center">
+                        {subject.maxMarks}
+                      </td>
+                      <td className="p-3 text-center font-bold">
+                        {subject.obtainedMarks}
+                      </td>
+                      <td className="p-3 text-center">
+                        <span
+                          className={
+                            subject.obtainedMarks >= Math.round(subject.maxMarks * 0.33)
+                              ? "font-semibold text-green-600"
+                              : "font-semibold text-red-600"
+                          }
+                        >
+                          {subject.obtainedMarks >= Math.round(subject.maxMarks * 0.33) ? "Pass" : "Fail"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-yellow-50 font-bold text-slate-900">
+                    <td className="p-3">Total</td>
+                    <td className="p-3 text-center">{totalMarks}</td>
+                    <td className="p-3 text-center">{obtainedMarks}</td>
+                    <td className="p-3 text-center">-</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
 
           {/* Result Summary */}
-          <div className="mt-6 grid gap-4 sm:grid-cols-3">
-            <div className="rounded-lg border border-slate-200 p-4">
-              <p className="text-sm text-slate-500">Percentage</p>
-              <p className="mt-1 text-2xl font-extrabold text-slate-900">
-                {percentage.toFixed(2)}%
-              </p>
-            </div>
+          {selectedStudent.subjects.length > 0 && (
+            <div className="mt-6 grid gap-4 sm:grid-cols-3">
+              <div className="rounded-lg border border-slate-200 p-4">
+                <p className="text-sm text-slate-500">Percentage</p>
+                <p className="mt-1 text-2xl font-extrabold text-slate-900">
+                  {percentage.toFixed(2)}%
+                </p>
+              </div>
 
-            <div className="rounded-lg border border-slate-200 p-4">
-              <p className="text-sm text-slate-500">Grade</p>
-              <p className="mt-1 text-2xl font-extrabold text-slate-900">
-                {grade}
-              </p>
-            </div>
+              <div className="rounded-lg border border-slate-200 p-4">
+                <p className="text-sm text-slate-500">Grade</p>
+                <p className="mt-1 text-2xl font-extrabold text-slate-900">
+                  {grade}
+                </p>
+              </div>
 
-            <div className="rounded-lg border border-slate-200 p-4">
-              <p className="text-sm text-slate-500">Final Result</p>
-              <p
-                className={`mt-1 flex items-center gap-2 text-xl font-extrabold ${
-                  isPassed ? "text-green-600" : "text-red-600"
-                }`}
-              >
-                {isPassed ? (
-                  <CheckCircle size={21} />
-                ) : (
-                  <XCircle size={21} />
-                )}
-                {isPassed ? "PASS" : "FAIL"}
-              </p>
+              <div className="rounded-lg border border-slate-200 p-4">
+                <p className="text-sm text-slate-500">Final Result</p>
+                <p
+                  className={`mt-1 flex items-center gap-2 text-xl font-extrabold ${
+                    isPassed ? "text-green-600" : "text-red-600"
+                  }`}
+                >
+                  {isPassed ? (
+                    <CheckCircle size={21} />
+                  ) : (
+                    <XCircle size={21} />
+                  )}
+                  {isPassed ? "PASS" : "FAIL"}
+                </p>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Remarks and Signatures */}
           <div className="mt-6 rounded-lg bg-slate-50 p-4">
@@ -347,7 +427,9 @@ export default function ReportCardPage() {
               Remarks
             </p>
             <p className="mt-1 text-sm text-slate-600">
-              {isPassed
+              {selectedStudent.subjects.length === 0
+                ? "Pending evaluation for the current academic session."
+                : isPassed
                 ? "Congratulations! Keep up the good work."
                 : "Needs improvement. Please work harder in the next examination."}
             </p>

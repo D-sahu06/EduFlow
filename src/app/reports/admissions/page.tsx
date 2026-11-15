@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -11,25 +10,19 @@ import {
   CheckCircle,
   Search,
   X,
+  Loader2,
 } from "lucide-react";
+import { api } from "@/lib/api";
 
 type Admission = {
-  id: number;
+  id: string;
   name: string;
   className: string;
   date: string;
   status: "Approved" | "Pending" | "Rejected";
 };
 
-const initialAdmissions: Admission[] = [
-  { id: 1, name: "Aarav Sharma", className: "Class 10", date: "2026-10-05", status: "Approved" },
-  { id: 2, name: "Priya Verma", className: "Class 9", date: "2026-10-08", status: "Pending" },
-  { id: 3, name: "Rahul Patel", className: "Class 12", date: "2026-10-10", status: "Approved" },
-  { id: 4, name: "Ananya Jain", className: "Class 8", date: "2026-10-12", status: "Rejected" },
-  { id: 5, name: "Vivek Singh", className: "Class 11", date: "2026-10-15", status: "Pending" },
-];
-
-const statusStyles = {
+const statusStyles: Record<string, string> = {
   Approved: "bg-green-100 text-green-700",
   Pending: "bg-amber-100 text-amber-700",
   Rejected: "bg-red-100 text-red-700",
@@ -38,12 +31,44 @@ const statusStyles = {
 export default function AdmissionReportsPage() {
   const router = useRouter();
 
-  const [admissions, setAdmissions] = useState(initialAdmissions);
+  const [admissions, setAdmissions] = useState<Admission[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("All");
-  const [showForm, setShowForm] = useState(false);
-  const [name, setName] = useState("");
-  const [className, setClassName] = useState("Class 10");
+  const [userRole, setUserRole] = useState<string>("");
+
+  useEffect(() => {
+    const role = localStorage.getItem("role") || "";
+    setUserRole(role);
+    fetchAdmissions();
+  }, []);
+
+  async function fetchAdmissions() {
+    setLoading(true);
+    try {
+      const res = await api.get<{ success: boolean; applications: any[] }>(
+        "/admissions/applications"
+      );
+      if (res?.applications) {
+        const mapped: Admission[] = res.applications.map((app: any) => ({
+          id: app._id,
+          name: app.applicantName || "Unknown Applicant",
+          className: app.applyingForClass || "Class 10",
+          date: app.createdAt
+            ? new Date(app.createdAt).toISOString().slice(0, 10)
+            : new Date().toISOString().slice(0, 10),
+          status: app.status || "Pending",
+        }));
+        setAdmissions(mapped);
+      }
+    } catch {
+      setAdmissions([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const canManage = ["SUPER_ADMIN", "ADMIN", "PRINCIPAL"].includes(userRole);
 
   const filteredAdmissions = admissions.filter((admission) => {
     const matchesSearch =
@@ -60,21 +85,17 @@ export default function AdmissionReportsPage() {
   const pending = admissions.filter((a) => a.status === "Pending").length;
   const rejected = admissions.filter((a) => a.status === "Rejected").length;
 
-  function addAdmission(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-
-    const newAdmission: Admission = {
-      id: Date.now(),
-      name: name.trim(),
-      className,
-      date: new Date().toISOString().slice(0, 10),
-      status: "Pending",
-    };
-
-    setAdmissions((current) => [newAdmission, ...current]);
-    setName("");
-    setClassName("Class 10");
-    setShowForm(false);
+  async function handleStatusChange(id: string, newStatus: "Approved" | "Rejected") {
+    try {
+      await api.put(`/admissions/applications/${id}/status`, {
+        status: newStatus,
+      });
+      setAdmissions((current) =>
+        current.map((a) => (a.id === id ? { ...a, status: newStatus } : a))
+      );
+    } catch {
+      fetchAdmissions();
+    }
   }
 
   return (
@@ -84,7 +105,7 @@ export default function AdmissionReportsPage() {
         <button
           type="button"
           onClick={() => router.back()}
-          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 cursor-pointer"
         >
           <ArrowLeft size={18} />
           Back
@@ -100,14 +121,16 @@ export default function AdmissionReportsPage() {
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setShowForm(true)}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 py-3 text-sm font-semibold text-white hover:bg-amber-600"
-          >
-            <UserPlus size={18} />
-            New Admission
-          </button>
+          {canManage && (
+            <button
+              type="button"
+              onClick={() => router.push("/admission/new")}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-500 px-4 py-3 text-sm font-semibold text-white hover:bg-amber-600 cursor-pointer"
+            >
+              <UserPlus size={18} />
+              New Admission
+            </button>
+          )}
         </section>
 
         <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -159,131 +182,72 @@ export default function AdmissionReportsPage() {
             </select>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[650px] text-left text-sm">
-              <thead className="bg-slate-50 text-slate-600">
-                <tr>
-                  <th className="px-4 py-3 font-semibold">Student Name</th>
-                  <th className="px-4 py-3 font-semibold">Class</th>
-                  <th className="px-4 py-3 font-semibold">Application Date</th>
-                  <th className="px-4 py-3 font-semibold">Status</th>
-                  <th className="px-4 py-3 font-semibold">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredAdmissions.map((admission) => (
-                  <tr key={admission.id} className="hover:bg-amber-50/40">
-                    <td className="px-4 py-4 font-medium text-slate-800">{admission.name}</td>
-                    <td className="px-4 py-4 text-slate-600">{admission.className}</td>
-                    <td className="px-4 py-4 text-slate-600">{admission.date}</td>
-                    <td className="px-4 py-4">
-                      <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusStyles[admission.status]}`}>
-                        {admission.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-4">
-                      {admission.status === "Pending" ? (
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setAdmissions((current) =>
-                                current.map((a) =>
-                                  a.id === admission.id ? { ...a, status: "Approved" } : a
-                                )
-                              )
-                            }
-                            className="rounded-md bg-green-50 px-3 py-2 text-xs font-semibold text-green-700 hover:bg-green-100"
-                          >
-                            Approve
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setAdmissions((current) =>
-                                current.map((a) =>
-                                  a.id === admission.id ? { ...a, status: "Rejected" } : a
-                                )
-                              )
-                            }
-                            className="rounded-md bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100"
-                          >
-                            Reject
-                          </button>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-slate-400">No action</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-
-                {filteredAdmissions.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-10 text-center text-slate-500">
-                      No admission records found.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        {showForm && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-              <div className="mb-5 flex items-center justify-between">
-                <h2 className="text-xl font-bold text-slate-800">New Admission</h2>
-                <button
-                  type="button"
-                  onClick={() => setShowForm(false)}
-                  className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
-                  aria-label="Close form"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-
-              <form onSubmit={addAdmission} className="space-y-4">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">
-                    Student Name
-                  </label>
-                  <input
-                    required
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="Enter student name"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-3 text-sm outline-none focus:border-amber-400"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">
-                    Class
-                  </label>
-                  <select
-                    value={className}
-                    onChange={(e) => setClassName(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm outline-none focus:border-amber-400"
-                  >
-                    {["Class 1", "Class 2", "Class 3", "Class 4", "Class 5", "Class 6", "Class 7", "Class 8", "Class 9", "Class 10", "Class 11", "Class 12"].map((item) => (
-                      <option key={item} value={item}>{item}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <button
-                  type="submit"
-                  className="w-full rounded-lg bg-amber-500 px-4 py-3 text-sm font-semibold text-white hover:bg-amber-600"
-                >
-                  Create Application
-                </button>
-              </form>
+          {loading ? (
+            <div className="flex h-32 items-center justify-center">
+              <Loader2 className="animate-spin text-amber-500" size={28} />
             </div>
-          </div>
-        )}
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[650px] text-left text-sm">
+                <thead className="bg-slate-50 text-slate-600">
+                  <tr>
+                    <th className="px-4 py-3 font-semibold">Student Name</th>
+                    <th className="px-4 py-3 font-semibold">Class</th>
+                    <th className="px-4 py-3 font-semibold">Application Date</th>
+                    <th className="px-4 py-3 font-semibold">Status</th>
+                    <th className="px-4 py-3 font-semibold">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredAdmissions.map((admission) => (
+                    <tr key={admission.id} className="hover:bg-amber-50/40">
+                      <td className="px-4 py-4 font-medium text-slate-800">{admission.name}</td>
+                      <td className="px-4 py-4 text-slate-600">{admission.className}</td>
+                      <td className="px-4 py-4 text-slate-600">{admission.date}</td>
+                      <td className="px-4 py-4">
+                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusStyles[admission.status] || "bg-slate-100 text-slate-700"}`}>
+                          {admission.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4">
+                        {admission.status === "Pending" && canManage ? (
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleStatusChange(admission.id, "Approved")}
+                              className="rounded-md bg-green-50 px-3 py-2 text-xs font-semibold text-green-700 hover:bg-green-100"
+                            >
+                              Approve
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleStatusChange(admission.id, "Rejected")}
+                              className="rounded-md bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100"
+                            >
+                              Reject
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-slate-400">
+                            {admission.status === "Pending" ? "Pending" : "No action"}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+
+                  {filteredAdmissions.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-10 text-center text-slate-500">
+                        No admission records found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
 
       </div>
     </main>

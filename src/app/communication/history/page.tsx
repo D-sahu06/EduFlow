@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -11,10 +11,12 @@ import {
   MessageSquare,
   Megaphone,
   Bell,
+  Loader2,
 } from "lucide-react";
+import { api } from "@/lib/api";
 
 type HistoryItem = {
-  id: number;
+  id: string | number;
   title: string;
   type: "Message" | "Announcement" | "Notification";
   recipient: string;
@@ -23,57 +25,83 @@ type HistoryItem = {
   description: string;
 };
 
-const initialHistory: HistoryItem[] = [
-  {
-    id: 1,
-    title: "Parent-Teacher Meeting",
-    type: "Announcement",
-    recipient: "All Parents",
-    date: "2026-10-24",
-    status: "Delivered",
-    description:
-      "Parent-teacher meeting is scheduled for Saturday at 10 AM.",
-  },
-  {
-    id: 2,
-    title: "Fee Payment Reminder",
-    type: "Message",
-    recipient: "Class 10 Students",
-    date: "2026-10-23",
-    status: "Read",
-    description:
-      "Please complete the pending fee payment before the due date.",
-  },
-  {
-    id: 3,
-    title: "Exam Schedule",
-    type: "Notification",
-    recipient: "All Students",
-    date: "2026-10-22",
-    status: "Sent",
-    description:
-      "The upcoming examination schedule has been published.",
-  },
-  {
-    id: 4,
-    title: "Holiday Notice",
-    type: "Announcement",
-    recipient: "All Users",
-    date: "2026-10-20",
-    status: "Delivered",
-    description:
-      "The institution will remain closed on the announced holiday.",
-  },
-];
-
 export default function CommunicationHistoryPage() {
   const router = useRouter();
 
-  const [history] = useState<HistoryItem[]>(initialHistory);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
   const [selected, setSelected] = useState<HistoryItem | null>(null);
+
+  useEffect(() => {
+    async function loadHistory() {
+      try {
+        setLoading(true);
+        setError("");
+        const [annRes, msgRes, notifRes] = await Promise.allSettled([
+          api.get("/communication/announcements"),
+          api.get("/communication/messages"),
+          api.get("/communication/notifications"),
+        ]);
+
+        const items: HistoryItem[] = [];
+
+        if (annRes.status === "fulfilled" && annRes.value?.announcements) {
+          annRes.value.announcements.forEach((a: any) => {
+            items.push({
+              id: a._id || a.id,
+              title: a.title,
+              type: "Announcement",
+              recipient: a.audience || "All",
+              date: a.createdAt ? a.createdAt.slice(0, 10) : new Date().toISOString().slice(0, 10),
+              status: "Delivered",
+              description: a.content,
+            });
+          });
+        }
+
+        if (msgRes.status === "fulfilled" && msgRes.value?.messages) {
+          msgRes.value.messages.forEach((m: any) => {
+            items.push({
+              id: m._id || m.id,
+              title: m.subject,
+              type: "Message",
+              recipient: m.recipient || m.recipientEmail,
+              date: m.createdAt ? m.createdAt.slice(0, 10) : new Date().toISOString().slice(0, 10),
+              status: m.status === "Sent" ? "Delivered" : "Read",
+              description: m.content,
+            });
+          });
+        }
+
+        if (notifRes.status === "fulfilled" && notifRes.value?.notifications) {
+          notifRes.value.notifications.forEach((n: any) => {
+            items.push({
+              id: n._id || n.id,
+              title: n.title,
+              type: "Notification",
+              recipient: n.category || "Notification",
+              date: n.createdAt ? n.createdAt.slice(0, 10) : new Date().toISOString().slice(0, 10),
+              status: n.isRead ? "Read" : "Delivered",
+              description: n.message,
+            });
+          });
+        }
+
+        setHistory(items);
+      } catch (err: any) {
+        setError(err.message || "Failed to load communication history.");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadHistory();
+  }, []);
 
   const filteredHistory = history.filter((item) => {
     const searchText = search.toLowerCase();
@@ -151,6 +179,12 @@ export default function CommunicationHistoryPage() {
             </p>
           </div>
         </section>
+
+        {error && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            {error}
+          </div>
+        )}
 
         {/* Summary Cards */}
         <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -260,7 +294,14 @@ export default function CommunicationHistoryPage() {
               </thead>
 
               <tbody className="divide-y divide-slate-100">
-                {filteredHistory.map((item) => (
+                {loading ? (
+                  <tr>
+                    <td colSpan={6} className="px-5 py-12 text-center text-slate-500">
+                      <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin text-amber-500" />
+                      Loading communication records...
+                    </td>
+                  </tr>
+                ) : filteredHistory.map((item) => (
                   <tr
                     key={item.id}
                     className="transition hover:bg-amber-50/40"
@@ -271,7 +312,7 @@ export default function CommunicationHistoryPage() {
                       </p>
                       <p className="mt-1 text-xs text-slate-500">
                         ID: COM-
-                        {item.id.toString().padStart(4, "0")}
+                        {String(item.id).slice(-4)}
                       </p>
                     </td>
 
@@ -311,7 +352,7 @@ export default function CommunicationHistoryPage() {
                   </tr>
                 ))}
 
-                {filteredHistory.length === 0 && (
+                {!loading && filteredHistory.length === 0 && (
                   <tr>
                     <td
                       colSpan={6}
@@ -408,7 +449,7 @@ export default function CommunicationHistoryPage() {
                 <div>
                   <p className="text-xs text-slate-500">Status</p>
                   <span
-                    className={"mt-1 inline-block rounded-full px-3 py-1 text-xs font-semibold" `${statusStyle[selected.status]}`}
+                    className={`mt-1 inline-block rounded-full px-3 py-1 text-xs font-semibold ${statusStyle[selected.status] ?? ""}`}
                   >
                     {selected.status}
                   </span>

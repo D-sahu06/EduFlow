@@ -6,7 +6,8 @@ export type Role =
   | "HOD"
   | "TEACHER"
   | "ACCOUNTANT"
-  | "STUDENT";
+  | "STUDENT"
+  | "USER";
 
 export type PermissionAction =
   | "view"

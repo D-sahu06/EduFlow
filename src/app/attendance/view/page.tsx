@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Search,
@@ -12,12 +11,14 @@ import {
   XCircle,
   Clock,
   ArrowLeft,
+  Loader2,
 } from "lucide-react";
+import { api } from "@/lib/api";
 
 type AttendanceStatus = "Present" | "Absent" | "Late" | "On Leave";
 
 type AttendanceRecord = {
-  id: number;
+  id: string | number;
   name: string;
   rollNo: string;
   className: string;
@@ -25,16 +26,6 @@ type AttendanceRecord = {
   date: string;
   status: AttendanceStatus;
 };
-
-const initialRecords: AttendanceRecord[] = [
-  { id: 1, name: "Aarav Sharma", rollNo: "STU001", className: "Class 10", section: "A", date: "2026-10-26", status: "Present" },
-  { id: 2, name: "Ananya Verma", rollNo: "STU002", className: "Class 10", section: "A", date: "2026-10-26", status: "Absent" },
-  { id: 3, name: "Rohan Patel", rollNo: "STU003", className: "Class 10", section: "B", date: "2026-10-26", status: "Late" },
-  { id: 4, name: "Priya Singh", rollNo: "STU004", className: "Class 9", section: "A", date: "2026-10-26", status: "Present" },
-  { id: 5, name: "Arjun Jain", rollNo: "STU005", className: "Class 9", section: "B", date: "2026-10-26", status: "On Leave" },
-  { id: 6, name: "Isha Gupta", rollNo: "STU006", className: "Class 10", section: "A", date: "2026-10-25", status: "Present" },
-  { id: 7, name: "Kabir Joshi", rollNo: "STU007", className: "Class 9", section: "B", date: "2026-10-25", status: "Absent" },
-];
 
 const statusStyles: Record<AttendanceStatus, string> = {
   Present: "bg-green-100 text-green-700",
@@ -44,11 +35,123 @@ const statusStyles: Record<AttendanceStatus, string> = {
 };
 
 export default function ViewAttendancePage() {
-  const [records] = useState(initialRecords);
+  const router = useRouter();
+  const [records, setRecords] = useState<AttendanceRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [userRole, setUserRole] = useState("");
   const [search, setSearch] = useState("");
   const [classFilter, setClassFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
-  const [dateFilter, setDateFilter] = useState("2026-10-26");
+  const [dateFilter, setDateFilter] = useState("");
+  const [monthFilter, setMonthFilter] = useState("All");
+
+  const isStudent = userRole === "STUDENT";
+  const isAccountant = userRole === "ACCOUNTANT";
+
+  useEffect(() => {
+    const syncRole = () => {
+      try {
+        const userStr = localStorage.getItem("eduflow-user");
+        if (userStr) {
+          const parsed = JSON.parse(userStr);
+          if (parsed?.role) {
+            setUserRole(String(parsed.role).toUpperCase());
+            return;
+          }
+        }
+      } catch {}
+      const fallbackRole = (
+        localStorage.getItem("eduflow-role") ||
+        localStorage.getItem("eduflow-demo-role") ||
+        localStorage.getItem("role") ||
+        ""
+      ).toUpperCase();
+      if (fallbackRole) setUserRole(fallbackRole);
+    };
+
+    const loadAttendance = async () => {
+      try {
+        setLoading(true);
+        setError("");
+        const res = await api.get("/attendance");
+        if (res && res.records) {
+          setRecords(
+            res.records.map((r: any, idx: number) => {
+              let stat: AttendanceStatus = "Present";
+              const s = (r.status || "").toLowerCase();
+              if (s === "absent") stat = "Absent";
+              else if (s === "late") stat = "Late";
+              else if (s === "on leave" || s === "onleave" || s === "excused") stat = "On Leave";
+
+              return {
+                id: r._id || idx + 1,
+                name: r.studentName || r.student?.name || r.user?.name || "",
+                rollNo:
+                  r.rollNumber ||
+                  r.student?.rollNumber ||
+                  r.student?.studentId ||
+                  r.user?.employeeId ||
+                  r.user?.username ||
+                  "—",
+                className: r.className || r.student?.className || r.user?.department || "—",
+                section:
+                  r.section ||
+                  r.student?.section ||
+                  (r.targetType === "Staff" ? r.user?.role || "Staff" : "—"),
+                date: r.date ? r.date.slice(0, 10) : "—",
+                status: stat,
+              };
+            })
+          );
+        } else {
+          setRecords([]);
+        }
+      } catch (err: any) {
+        setError(err.message || "Failed to load attendance records.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    const syncAll = () => {
+      syncRole();
+      loadAttendance();
+    };
+
+    syncAll();
+    window.addEventListener("eduflow-user-change", syncAll);
+    window.addEventListener("storage", syncAll);
+    return () => {
+      window.removeEventListener("eduflow-user-change", syncAll);
+      window.removeEventListener("storage", syncAll);
+    };
+  }, []);
+
+  const availableDates = useMemo(() => {
+    return Array.from(new Set(records.map((r) => r.date))).filter(
+      (d) => d && d !== "—"
+    ).sort().reverse();
+  }, [records]);
+
+  const availableMonths = useMemo(() => {
+    const monthSet = new Set<string>();
+    records.forEach((r) => {
+      if (r.date && r.date !== "—") {
+        const ym = r.date.slice(0, 7);
+        if (/^\d{4}-\d{2}$/.test(ym)) {
+          monthSet.add(ym);
+        }
+      }
+    });
+    return Array.from(monthSet).sort().reverse();
+  }, [records]);
+
+  const availableClasses = useMemo(() => {
+    return Array.from(new Set(records.map((r) => r.className))).filter(
+      (c) => c && c !== "—"
+    );
+  }, [records]);
 
   const filteredRecords = useMemo(() => {
     return records.filter((record) => {
@@ -64,19 +167,29 @@ export default function ViewAttendancePage() {
 
       const matchesDate = !dateFilter || record.date === dateFilter;
 
-      return matchesSearch && matchesClass && matchesStatus && matchesDate;
+      const matchesMonth =
+        monthFilter === "All" ||
+        (record.date && record.date.startsWith(monthFilter));
+
+      return matchesSearch && matchesClass && matchesStatus && matchesDate && matchesMonth;
     });
-  }, [records, search, classFilter, statusFilter, dateFilter]);
+  }, [records, search, classFilter, statusFilter, dateFilter, monthFilter]);
 
   const counts = {
+    total: filteredRecords.length,
     present: filteredRecords.filter((r) => r.status === "Present").length,
     absent: filteredRecords.filter((r) => r.status === "Absent").length,
     late: filteredRecords.filter((r) => r.status === "Late").length,
     leave: filteredRecords.filter((r) => r.status === "On Leave").length,
   };
 
+  const percentage =
+    counts.total > 0 ? Math.round((counts.present / counts.total) * 100) : 0;
+
   function exportCSV() {
-    const header = ["Student", "Roll No", "Class", "Section", "Date", "Status"];
+    const header = isAccountant
+      ? ["Name", "ID", "Department", "Role", "Date", "Status"]
+      : ["Student", "Roll No", "Class", "Section", "Date", "Status"];
     const rows = filteredRecords.map((r) => [
       r.name, r.rollNo, r.className, r.section, r.date, r.status,
     ]);
@@ -97,7 +210,6 @@ export default function ViewAttendancePage() {
     link.click();
     URL.revokeObjectURL(url);
   }
-   const router = useRouter();
 
   return (
     <main className="min-h-screen bg-gray-50 p-4 md:p-8">
@@ -106,37 +218,49 @@ export default function ViewAttendancePage() {
           <div>
             <button
               onClick={() => router.back()}
-              className="mb-5 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+              className="mb-5 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 cursor-pointer"
             >
               <ArrowLeft size={17} />
               Back
             </button>
-            {/* <p className="text-sm text-gray-500">
-              Dashboard / Attendance / View Attendance
-            </p> */}
             <h1 className="mt-2 text-2xl font-extrabold text-gray-950 md:text-3xl">
-              View Attendance
+              {isStudent ? "My Attendance" : isAccountant ? "Staff Attendance" : "View Attendance"}
             </h1>
             <p className="mt-1 text-sm text-gray-500">
-              Search and review student attendance records.
+              {isStudent
+                ? "Review your personal attendance history, monthly statistics, and daily status."
+                : isAccountant
+                ? "View your own attendance records."
+                : "Search and review student attendance records."}
             </p>
           </div>
 
           <button
             onClick={exportCSV}
-            className="flex items-center gap-2 rounded-xl bg-yellow-400 px-4 py-3 text-sm font-bold text-gray-950 transition hover:bg-yellow-300"
+            className="flex items-center gap-2 rounded-xl bg-yellow-400 px-4 py-3 text-sm font-bold text-gray-950 transition hover:bg-yellow-300 cursor-pointer shadow-sm"
           >
             <Download size={18} />
             Export CSV
           </button>
         </div>
 
-        <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <section className={`grid grid-cols-2 gap-4 ${isStudent ? "sm:grid-cols-3 lg:grid-cols-5" : "sm:grid-cols-2 xl:grid-cols-4"}`}>
           {[
             { label: "Present", value: counts.present, icon: CheckCircle2, color: "text-green-600", bg: "bg-green-50" },
             { label: "Absent", value: counts.absent, icon: XCircle, color: "text-red-600", bg: "bg-red-50" },
             { label: "Late", value: counts.late, icon: Clock, color: "text-yellow-700", bg: "bg-yellow-50" },
             { label: "On Leave", value: counts.leave, icon: CalendarDays, color: "text-blue-600", bg: "bg-blue-50" },
+            ...(isStudent
+              ? [
+                  {
+                    label: "Attendance Rate",
+                    value: `${percentage}%`,
+                    icon: CalendarDays,
+                    color: "text-gray-900",
+                    bg: "bg-yellow-100",
+                  },
+                ]
+              : []),
           ].map((stat) => {
             const Icon = stat.icon;
             return (
@@ -150,13 +274,20 @@ export default function ViewAttendancePage() {
                 <p className="mt-3 text-3xl font-extrabold text-gray-950">
                   {stat.value}
                 </p>
-                <p className="mt-1 text-xs text-gray-400">Filtered records</p>
+                <p className="mt-1 text-xs text-gray-400">
+                  {stat.label === "Attendance Rate" ? `${counts.present} of ${counts.total} days` : "Filtered records"}
+                </p>
               </div>
             );
           })}
         </section>
 
         <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm md:p-6">
+          {error && (
+            <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {error}
+            </div>
+          )}
           <div className="mb-5 flex items-center gap-2">
             <Users size={20} className="text-yellow-600" />
             <h2 className="text-lg font-bold text-gray-950">
@@ -167,41 +298,68 @@ export default function ViewAttendancePage() {
             </span>
           </div>
 
-          <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className={`mb-5 grid grid-cols-1 gap-3 md:grid-cols-2 ${isStudent ? "xl:grid-cols-4" : "xl:grid-cols-5"}`}>
             <div className="relative">
               <Search size={18} className="absolute left-3 top-3 text-gray-400" />
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search name or roll no."
+                placeholder={isStudent ? "Search notes..." : "Search name or roll no."}
                 className="w-full rounded-xl border border-gray-200 py-2.5 pl-10 pr-3 text-sm outline-none focus:border-yellow-400 focus:ring-2 focus:ring-yellow-100"
               />
             </div>
 
+            {/* Monthly Filter */}
             <select
-              value={dateFilter}
-              onChange={(e) => setDateFilter(e.target.value)}
-              className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-yellow-400"
+              value={monthFilter}
+              onChange={(e) => setMonthFilter(e.target.value)}
+              className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-yellow-400 cursor-pointer"
             >
-              <option value="">All dates</option>
-              <option value="2026-10-26">26 Oct 2026</option>
-              <option value="2026-10-25">25 Oct 2026</option>
+              <option value="All">All Months</option>
+              {availableMonths.map((ym) => {
+                const [year, month] = ym.split("-");
+                const monthDate = new Date(Number(year), Number(month) - 1, 1);
+                const label = monthDate.toLocaleString("en-US", { month: "long", year: "numeric" });
+                return (
+                  <option key={ym} value={ym}>
+                    {label}
+                  </option>
+                );
+              })}
             </select>
 
             <select
-              value={classFilter}
-              onChange={(e) => setClassFilter(e.target.value)}
-              className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-yellow-400"
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value)}
+              className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-yellow-400 cursor-pointer"
             >
-              <option value="All">All classes</option>
-              <option value="Class 9">Class 9</option>
-              <option value="Class 10">Class 10</option>
+              <option value="">All dates</option>
+              {availableDates.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
             </select>
+
+            {!isStudent && (
+              <select
+                value={classFilter}
+                onChange={(e) => setClassFilter(e.target.value)}
+                className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-yellow-400 cursor-pointer"
+              >
+                <option value="All">{isAccountant ? "All departments" : "All classes"}</option>
+                {availableClasses.map((cls) => (
+                  <option key={cls} value={cls}>
+                    {cls}
+                  </option>
+                ))}
+              </select>
+            )}
 
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-yellow-400"
+              className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-yellow-400 cursor-pointer"
             >
               <option value="All">All statuses</option>
               <option value="Present">Present</option>
@@ -215,16 +373,23 @@ export default function ViewAttendancePage() {
             <table className="w-full min-w-190 text-left text-sm">
               <thead>
                 <tr className="border-y border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
-                  <th className="px-4 py-4 font-semibold">Student</th>
-                  <th className="px-4 py-4 font-semibold">Roll No.</th>
-                  <th className="px-4 py-4 font-semibold">Class</th>
-                  <th className="px-4 py-4 font-semibold">Section</th>
+                  <th className="px-4 py-4 font-semibold">{isAccountant ? "Name" : "Student"}</th>
+                  <th className="px-4 py-4 font-semibold">{isAccountant ? "ID" : "Roll No."}</th>
+                  <th className="px-4 py-4 font-semibold">{isAccountant ? "Department" : "Class"}</th>
+                  <th className="px-4 py-4 font-semibold">{isAccountant ? "Role" : "Section"}</th>
                   <th className="px-4 py-4 font-semibold">Date</th>
                   <th className="px-4 py-4 font-semibold">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filteredRecords.map((record) => (
+                {loading ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-12 text-center text-gray-500">
+                      <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin text-yellow-500" />
+                      Loading attendance records...
+                    </td>
+                  </tr>
+                ) : filteredRecords.map((record) => (
                   <tr key={record.id} className="transition hover:bg-yellow-50/50">
                     <td className="px-4 py-4 font-semibold text-gray-900">{record.name}</td>
                     <td className="px-4 py-4 text-gray-600">{record.rollNo}</td>
@@ -238,10 +403,14 @@ export default function ViewAttendancePage() {
                     </td>
                   </tr>
                 ))}
-                {filteredRecords.length === 0 && (
+                {!loading && filteredRecords.length === 0 && (
                   <tr>
                     <td colSpan={6} className="px-4 py-12 text-center text-gray-500">
-                      No attendance records match your filters.
+                      {isStudent
+                        ? "No attendance records recorded for this period yet. Once marked by your teacher, your attendance will appear here."
+                        : isAccountant && records.length === 0
+                        ? "No personal attendance records found."
+                        : "No attendance records match your filters."}
                     </td>
                   </tr>
                 )}
@@ -250,7 +419,7 @@ export default function ViewAttendancePage() {
           </div>
 
           <p className="mt-4 text-xs text-gray-400">
-            Showing {filteredRecords.length} matching records. Demo data only.
+            Showing {filteredRecords.length} records
           </p>
         </section>
       </div>

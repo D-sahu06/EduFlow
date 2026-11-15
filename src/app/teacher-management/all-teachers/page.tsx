@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Search,
@@ -14,17 +13,19 @@ import {
   UserCheck,
   UserX,
   GraduationCap,
-  Filter,
   Mail,
   ArrowLeft,
   Phone,
   Building2,
+  Loader2,
 } from "lucide-react";
+import { api } from "@/lib/api";
 
 type TeacherStatus = "Active" | "On Leave" | "Inactive";
 
 type Teacher = {
-  id: number;
+  id: string;
+  mongoId: string;
   name: string;
   email: string;
   phone: string;
@@ -35,65 +36,7 @@ type Teacher = {
   status: TeacherStatus;
 };
 
-type TeacherForm = Omit<Teacher, "id">;
-
-const initialTeachers: Teacher[] = [
-  {
-    id: 1,
-    name: "Rahul Sharma",
-    email: "rahul@eduflow.com",
-    phone: "9876543210",
-    department: "Computer Science",
-    designation: "Senior Lecturer",
-    qualification: "M.Tech",
-    joiningDate: "2023-06-15",
-    status: "Active",
-  },
-  {
-    id: 2,
-    name: "Priya Verma",
-    email: "priya@eduflow.com",
-    phone: "9876543211",
-    department: "Mathematics",
-    designation: "Assistant Professor",
-    qualification: "M.Sc",
-    joiningDate: "2022-08-10",
-    status: "Active",
-  },
-  {
-    id: 3,
-    name: "Amit Patel",
-    email: "amit@eduflow.com",
-    phone: "9876543212",
-    department: "Physics",
-    designation: "Lecturer",
-    qualification: "M.Sc",
-    joiningDate: "2024-01-20",
-    status: "On Leave",
-  },
-  {
-    id: 4,
-    name: "Sneha Gupta",
-    email: "sneha@eduflow.com",
-    phone: "9876543213",
-    department: "English",
-    designation: "Senior Lecturer",
-    qualification: "M.A",
-    joiningDate: "2021-07-05",
-    status: "Active",
-  },
-  {
-    id: 5,
-    name: "Vikas Jain",
-    email: "vikas@eduflow.com",
-    phone: "9876543214",
-    department: "Chemistry",
-    designation: "Assistant Professor",
-    qualification: "Ph.D",
-    joiningDate: "2020-03-12",
-    status: "Inactive",
-  },
-];
+type TeacherForm = Omit<Teacher, "id" | "mongoId">;
 
 const emptyForm: TeacherForm = {
   name: "",
@@ -102,7 +45,7 @@ const emptyForm: TeacherForm = {
   department: "",
   designation: "",
   qualification: "",
-  joiningDate: "",
+  joiningDate: new Date().toISOString().slice(0, 10),
   status: "Active",
 };
 
@@ -112,26 +55,77 @@ const departments = [
   "Physics",
   "Chemistry",
   "English",
+  "Finance",
+  "Hindi",
   "Other",
 ];
 
 export default function AllTeachersPage() {
-  const [teachers, setTeachers] = useState<Teacher[]>(initialTeachers);
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [search, setSearch] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
 
-  const [modalType, setModalType] = useState<
-    "add" | "edit" | "view" | null
-  >(null);
-
-  const [selectedTeacher, setSelectedTeacher] =
-    useState<Teacher | null>(null);
-
+  const [modalType, setModalType] = useState<"add" | "edit" | "view" | null>(null);
+  const [selectedTeacher, setSelectedTeacher] = useState<Teacher | null>(null);
   const [form, setForm] = useState<TeacherForm>(emptyForm);
-  const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
   const [formError, setFormError] = useState("");
-  const router = useRouter()
+  const [userRole, setUserRole] = useState("");
+  const router = useRouter();
+
+  const canManageTeacher = ["SUPER_ADMIN", "ADMIN", "PRINCIPAL"].includes(userRole);
+
+  const loadTeachers = async () => {
+    try {
+      setLoading(true);
+      const res = await api.get("/teachers");
+      if (res && res.teachers) {
+        setTeachers(
+          res.teachers.map((t: any) => ({
+            id: t.teacherId || t._id,
+            mongoId: t._id,
+            name: t.name,
+            email: t.email,
+            phone: t.phone || "",
+            department: t.department || "General",
+            designation: t.designation || "Faculty",
+            qualification: t.qualification || "N/A",
+            joiningDate: t.joiningDate
+              ? t.joiningDate.slice(0, 10)
+              : new Date().toISOString().slice(0, 10),
+            status: (t.status === "on_leave"
+              ? "On Leave"
+              : t.status === "inactive"
+              ? "Inactive"
+              : "Active") as TeacherStatus,
+          }))
+        );
+      }
+    } catch (err: any) {
+      console.error("Failed to load teachers:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    try {
+      const role = localStorage.getItem("role") || localStorage.getItem("eduflow-role") || "";
+      if (role) {
+        setUserRole(role);
+      } else {
+        const userStr = localStorage.getItem("eduflow-user");
+        if (userStr) {
+          const u = JSON.parse(userStr);
+          if (u.role) setUserRole(u.role);
+        }
+      }
+    } catch {}
+    loadTeachers();
+  }, []);
 
   const filteredTeachers = useMemo(() => {
     return teachers.filter((teacher) => {
@@ -191,58 +185,57 @@ export default function AllTeachersPage() {
     setModalType("view");
   };
 
-  const handleSave = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSave = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setFormError("");
+    setSubmitting(true);
 
-    const emailExists = teachers.some(
-      (teacher) =>
-        teacher.email.toLowerCase() === form.email.trim().toLowerCase() &&
-        teacher.id !== selectedTeacher?.id
-    );
+    try {
+      const dbStatus =
+        form.status === "On Leave"
+          ? "on_leave"
+          : form.status === "Inactive"
+          ? "inactive"
+          : "active";
 
-    if (emailExists) {
-      setFormError("This email is already registered.");
-      return;
-    }
-
-    const cleanedForm: TeacherForm = {
-      ...form,
-      name: form.name.trim(),
-      email: form.email.trim(),
-      phone: form.phone.trim(),
-    };
-
-    if (modalType === "add") {
-      const newTeacher: Teacher = {
-        ...cleanedForm,
-        id: Math.max(0, ...teachers.map((teacher) => teacher.id)) + 1,
+      const payload = {
+        name: form.name.trim(),
+        email: form.email.trim().toLowerCase(),
+        phone: form.phone.trim(),
+        department: form.department.trim(),
+        designation: form.designation.trim(),
+        qualification: form.qualification.trim(),
+        status: dbStatus,
+        joiningDate: form.joiningDate,
       };
 
-      setTeachers((prev) => [newTeacher, ...prev]);
-    } else if (modalType === "edit" && selectedTeacher) {
-      setTeachers((prev) =>
-        prev.map((teacher) =>
-          teacher.id === selectedTeacher.id
-            ? { ...cleanedForm, id: selectedTeacher.id }
-            : teacher
-        )
-      );
-    }
+      if (modalType === "add") {
+        await api.post("/teachers", payload);
+      } else if (modalType === "edit" && selectedTeacher) {
+        await api.put(`/teachers/${selectedTeacher.mongoId}`, payload);
+      }
 
-    setModalType(null);
-    setSelectedTeacher(null);
-    setForm(emptyForm);
+      await loadTeachers();
+      setModalType(null);
+      setSelectedTeacher(null);
+      setForm(emptyForm);
+    } catch (err: any) {
+      setFormError(err.message || "Failed to save teacher.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleDelete = () => {
-    if (deleteId === null) return;
+  const handleDelete = async () => {
+    if (!deleteId) return;
 
-    setTeachers((prev) =>
-      prev.filter((teacher) => teacher.id !== deleteId)
-    );
-
-    setDeleteId(null);
+    try {
+      await api.delete(`/teachers/${deleteId}`);
+      await loadTeachers();
+      setDeleteId(null);
+    } catch (err: any) {
+      alert(err.message || "Failed to delete teacher .");
+    }
   };
 
   const statusStyle = (status: TeacherStatus) => {
@@ -261,28 +254,30 @@ export default function AllTeachersPage() {
       {/* Header */}
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-           <button
-                  onClick={() => router.back()}
-                  className="mb-5 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-                  >
-                  <ArrowLeft size={17} />
-                   Back
+          <button
+            onClick={() => router.back()}
+            className="mb-5 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 cursor-pointer"
+          >
+            <ArrowLeft size={17} />
+            Back
           </button>
           <h1 className="text-2xl font-bold text-slate-900">
             All Teachers
           </h1>
           <p className="mt-1 text-sm text-gray-500">
-            View and manage all registered teachers.
+            View and manage all faculty records in erp.
           </p>
         </div>
 
-        <button
-          onClick={openAddModal}
-          className="inline-flex items-center justify-center gap-2 rounded-lg bg-yellow-300 px-4 py-2.5 text-sm font-bold text-slate-900 transition hover:bg-yellow-400"
-        >
-          <Plus size={18} />
-          Add Teacher
-        </button>
+        {/* {canManageTeacher && (
+          <button
+            onClick={openAddModal}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-yellow-300 px-4 py-2.5 text-sm font-bold text-slate-900 transition hover:bg-yellow-400 cursor-pointer"
+          >
+            <Plus size={18} />
+            Add Teacher
+          </button>
+        )} */}
       </div>
 
       {/* Statistics */}
@@ -322,13 +317,15 @@ export default function AllTeachersPage() {
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-gray-500">{item.title}</p>
-                  <h2 className="mt-2 text-3xl font-bold text-slate-900">
+                  <p className="text-sm font-medium text-gray-500">
+                    {item.title}
+                  </p>
+                  <p className="mt-2 text-2xl font-bold text-slate-900">
                     {item.value}
-                  </h2>
+                  </p>
                 </div>
                 <div className={`rounded-xl p-3 ${item.color}`}>
-                  <Icon size={22} />
+                  <Icon size={24} />
                 </div>
               </div>
             </div>
@@ -336,16 +333,9 @@ export default function AllTeachersPage() {
         })}
       </div>
 
-      {/* Filters */}
+      {/* Filters and Search */}
       <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
-        <div className="mb-4 flex items-center gap-2">
-          <Filter size={18} className="text-yellow-700" />
-          <h2 className="font-semibold text-slate-900">
-            Search & Filters
-          </h2>
-        </div>
-
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <div className="relative">
             <Search
               size={18}
@@ -387,7 +377,7 @@ export default function AllTeachersPage() {
 
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs text-gray-500">
-            Showing {filteredTeachers.length} of {teachers.length} teachers
+            Showing {filteredTeachers.length} of {teachers.length} teachers 
           </p>
 
           <button
@@ -396,7 +386,7 @@ export default function AllTeachersPage() {
               setDepartmentFilter("All");
               setStatusFilter("All");
             }}
-            className="text-xs font-semibold text-yellow-700 hover:text-yellow-800"
+            className="text-xs font-semibold text-yellow-700 hover:text-yellow-800 cursor-pointer"
           >
             Clear Filters
           </button>
@@ -406,123 +396,134 @@ export default function AllTeachersPage() {
       {/* Teachers Table */}
       <div className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
         <div className="border-b border-gray-100 p-5">
-          <h2 className="font-bold text-slate-900">Teacher Records</h2>
+          <h2 className="font-bold text-slate-900">Faculty Records</h2>
           <p className="mt-1 text-sm text-gray-500">
-            Manage teacher information and account status.
+            Stored and persisted in erp.
           </p>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-225 text-left">
-            <thead className="bg-gray-50">
-              <tr className="text-xs uppercase text-gray-500">
-                <th className="px-5 py-4 font-semibold">Teacher</th>
-                <th className="px-5 py-4 font-semibold">Department</th>
-                <th className="px-5 py-4 font-semibold">Designation</th>
-                <th className="px-5 py-4 font-semibold">Joining Date</th>
-                <th className="px-5 py-4 font-semibold">Status</th>
-                <th className="px-5 py-4 text-center font-semibold">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {filteredTeachers.map((teacher) => (
-                <tr
-                  key={teacher.id}
-                  className="border-t border-gray-100 transition hover:bg-yellow-50/30"
-                >
-                  <td className="px-5 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-yellow-100 font-bold text-yellow-800">
-                        {teacher.name
-                          .split(" ")
-                          .map((part) => part[0])
-                          .join("")
-                          .slice(0, 2)}
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">
-                          {teacher.name}
-                        </p>
-                        <p className="mt-1 text-xs text-gray-500">
-                          {teacher.email}
-                        </p>
-                      </div>
-                    </div>
-                  </td>
-
-                  <td className="px-5 py-4 text-sm text-gray-600">
-                    {teacher.department}
-                  </td>
-
-                  <td className="px-5 py-4 text-sm text-gray-600">
-                    {teacher.designation}
-                  </td>
-
-                  <td className="px-5 py-4 text-sm text-gray-600">
-                    {teacher.joiningDate}
-                  </td>
-
-                  <td className="px-5 py-4">
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-semibold ${statusStyle(
-                        teacher.status
-                      )}`}
-                    >
-                      {teacher.status}
-                    </span>
-                  </td>
-
-                  <td className="px-5 py-4">
-                    <div className="flex items-center justify-center gap-2">
-                      <button
-                        title="View Teacher"
-                        onClick={() => openViewModal(teacher)}
-                        className="rounded-lg p-2 text-blue-600 transition hover:bg-blue-50"
-                      >
-                        <Eye size={17} />
-                      </button>
-
-                      <button
-                        title="Edit Teacher"
-                        onClick={() => openEditModal(teacher)}
-                        className="rounded-lg p-2 text-yellow-700 transition hover:bg-yellow-50"
-                      >
-                        <Pencil size={17} />
-                      </button>
-
-                      <button
-                        title="Delete Teacher"
-                        onClick={() => setDeleteId(teacher.id)}
-                        className="rounded-lg p-2 text-red-600 transition hover:bg-red-50"
-                      >
-                        <Trash2 size={17} />
-                      </button>
-                    </div>
-                  </td>
+          {loading ? (
+            <div className="flex items-center justify-center gap-3 py-16 text-gray-500">
+              <Loader2 className="animate-spin text-yellow-400" size={24} />
+              <span>Fetching teachers ...</span>
+            </div>
+          ) : (
+            <table className="w-full min-w-225 text-left">
+              <thead className="bg-gray-50">
+                <tr className="text-xs uppercase text-gray-500">
+                  <th className="px-5 py-4 font-semibold">Teacher</th>
+                  <th className="px-5 py-4 font-semibold">Department</th>
+                  <th className="px-5 py-4 font-semibold">Designation</th>
+                  <th className="px-5 py-4 font-semibold">Joining Date</th>
+                  <th className="px-5 py-4 font-semibold">Status</th>
+                  <th className="px-5 py-4 text-center font-semibold">
+                    Actions
+                  </th>
                 </tr>
-              ))}
+              </thead>
 
-              {filteredTeachers.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-5 py-12 text-center">
-                    <Users
-                      size={35}
-                      className="mx-auto mb-3 text-gray-300"
-                    />
-                    <p className="font-semibold text-slate-700">
-                      No teachers found
-                    </p>
-                    <p className="mt-1 text-sm text-gray-500">
-                      Try changing your search or filters.
-                    </p>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+              <tbody>
+                {filteredTeachers.map((teacher) => (
+                  <tr
+                    key={teacher.mongoId}
+                    className="border-t border-gray-100 transition hover:bg-yellow-50/30"
+                  >
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-yellow-100 font-bold text-yellow-800">
+                          {teacher.name
+                            .split(" ")
+                            .map((part) => part[0])
+                            .join("")
+                            .slice(0, 2)}
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">
+                            {teacher.name}
+                          </p>
+                          <p className="mt-1 text-xs text-gray-500">
+                            {teacher.email}
+                          </p>
+                        </div>
+                      </div>
+                    </td>
+
+                    <td className="px-5 py-4 text-sm text-gray-600">
+                      {teacher.department}
+                    </td>
+
+                    <td className="px-5 py-4 text-sm text-gray-600">
+                      {teacher.designation}
+                    </td>
+
+                    <td className="px-5 py-4 text-sm text-gray-600">
+                      {teacher.joiningDate}
+                    </td>
+
+                    <td className="px-5 py-4">
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-semibold ${statusStyle(
+                          teacher.status
+                        )}`}
+                      >
+                        {teacher.status}
+                      </span>
+                    </td>
+
+                    <td className="px-5 py-4">
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          title="View Teacher"
+                          onClick={() => openViewModal(teacher)}
+                          className="rounded-lg p-2 text-blue-600 transition hover:bg-blue-50 cursor-pointer"
+                        >
+                          <Eye size={17} />
+                        </button>
+
+                        {canManageTeacher && (
+                          <>
+                            <button
+                              title="Edit Teacher"
+                              onClick={() => openEditModal(teacher)}
+                              className="rounded-lg p-2 text-yellow-700 transition hover:bg-yellow-50 cursor-pointer"
+                            >
+                              <Pencil size={17} />
+                            </button>
+
+                            <button
+                              title="Delete Teacher"
+                              onClick={() => setDeleteId(teacher.mongoId)}
+                              className="rounded-lg p-2 text-red-600 transition hover:bg-red-50 cursor-pointer"
+                            >
+                              <Trash2 size={17} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+
+                {filteredTeachers.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-5 py-12 text-center">
+                      <Users
+                        size={35}
+                        className="mx-auto mb-3 text-gray-300"
+                      />
+                      <p className="font-semibold text-slate-700">
+                        No teachers found .
+                      </p>
+                      <p className="mt-1 text-sm text-gray-500">
+                        Click &ldquo;Add Teacher&rdquo; to register a new teacher in erp.
+                      </p>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
 
@@ -536,13 +537,13 @@ export default function AllTeachersPage() {
                   {modalType === "add" ? "Add New Teacher" : "Edit Teacher"}
                 </h2>
                 <p className="mt-1 text-xs text-gray-500">
-                  Enter the teachers information below.
+                  Saves directly into erp.
                 </p>
               </div>
 
               <button
                 onClick={() => setModalType(null)}
-                className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"
+                className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 cursor-pointer"
               >
                 <X size={20} />
               </button>
@@ -672,16 +673,21 @@ export default function AllTeachersPage() {
                 <button
                   type="button"
                   onClick={() => setModalType(null)}
-                  className="rounded-lg border border-gray-200 px-5 py-2.5 text-sm font-semibold text-gray-600 hover:bg-gray-50"
+                  className="rounded-lg border border-gray-200 px-5 py-2.5 text-sm font-semibold text-gray-600 hover:bg-gray-50 cursor-pointer"
                 >
                   Cancel
                 </button>
 
                 <button
                   type="submit"
-                  className="rounded-lg bg-yellow-300 px-5 py-2.5 text-sm font-bold text-slate-900 hover:bg-yellow-400"
+                  disabled={submitting}
+                  className="rounded-lg bg-yellow-300 px-5 py-2.5 text-sm font-bold text-slate-900 hover:bg-yellow-400 disabled:opacity-50 cursor-pointer"
                 >
-                  {modalType === "add" ? "Save Teacher" : "Update Teacher"}
+                  {submitting
+                    ? "Saving to Database..."
+                    : modalType === "add"
+                    ? "Save Teacher"
+                    : "Update Teacher"}
                 </button>
               </div>
             </form>
@@ -699,7 +705,7 @@ export default function AllTeachersPage() {
               </h2>
               <button
                 onClick={() => setModalType(null)}
-                className="rounded-lg p-2 text-gray-500 hover:bg-gray-100"
+                className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 cursor-pointer"
               >
                 <X size={20} />
               </button>
@@ -719,7 +725,7 @@ export default function AllTeachersPage() {
                     {selectedTeacher.name}
                   </h3>
                   <p className="text-sm text-gray-500">
-                    {selectedTeacher.designation}
+                    {selectedTeacher.designation} (ID: {selectedTeacher.id})
                   </p>
                   <span
                     className={`mt-2 inline-block rounded-full px-3 py-1 text-xs font-semibold ${statusStyle(
@@ -761,7 +767,7 @@ export default function AllTeachersPage() {
 
               <button
                 onClick={() => setModalType(null)}
-                className="mt-7 w-full rounded-lg bg-yellow-300 py-2.5 text-sm font-bold text-slate-900 hover:bg-yellow-400"
+                className="mt-7 w-full rounded-lg bg-yellow-300 py-2.5 text-sm font-bold text-slate-900 hover:bg-yellow-400 cursor-pointer"
               >
                 Close
               </button>
@@ -782,20 +788,19 @@ export default function AllTeachersPage() {
               Delete Teacher?
             </h2>
             <p className="mt-2 text-center text-sm text-gray-500">
-              Are you sure you want to delete this teacher? This action cannot
-              be undone in this demo.
+              Are you sure you want to delete this teacher.
             </p>
 
             <div className="mt-6 flex gap-3">
               <button
                 onClick={() => setDeleteId(null)}
-                className="flex-1 rounded-lg border border-gray-200 py-2.5 text-sm font-semibold text-gray-600 hover:bg-gray-50"
+                className="flex-1 rounded-lg border border-gray-200 py-2.5 text-sm font-semibold text-gray-600 hover:bg-gray-50 cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 onClick={handleDelete}
-                className="flex-1 rounded-lg bg-red-600 py-2.5 text-sm font-bold text-white hover:bg-red-700"
+                className="flex-1 rounded-lg bg-red-600 py-2.5 text-sm font-bold text-white hover:bg-red-700 cursor-pointer"
               >
                 Delete
               </button>
@@ -803,18 +808,6 @@ export default function AllTeachersPage() {
           </div>
         </div>
       )}
-
-      {/* Demo Notice */}
-      <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-4">
-        <p className="text-sm font-semibold text-slate-800">
-          Demo Mode – Frontend Only
-        </p>
-        <p className="mt-1 text-xs leading-5 text-gray-600">
-          Teacher records are stored in React state only. Changes will reset
-          when the page is refreshed. Backend integration and persistent
-          storage are not connected yet.
-        </p>
-      </div>
     </div>
   );
 }

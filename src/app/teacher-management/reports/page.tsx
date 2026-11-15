@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -11,15 +10,16 @@ import {
   UserX,
   CalendarDays,
   Search,
-  
   GraduationCap,
   BriefcaseBusiness,
+  Loader2,
 } from "lucide-react";
+import { api } from "@/lib/api";
 
 type TeacherStatus = "Active" | "On Leave" | "Inactive";
 
 type Teacher = {
-  id: number;
+  id: string | number;
   name: string;
   department: string;
   designation: string;
@@ -28,37 +28,13 @@ type Teacher = {
 };
 
 type LeaveRequest = {
-  id: number;
+  id: string | number;
   teacherName: string;
   department: string;
   type: string;
   days: number;
   status: "Pending" | "Approved" | "Rejected";
 };
-
-const teachers: Teacher[] = [
-  { id: 1, name: "Rahul Sharma", department: "Computer Science", designation: "HOD", status: "Active", joiningDate: "2022-04-10" },
-  { id: 2, name: "Priya Verma", department: "Information Technology", designation: "Assistant Professor", status: "Active", joiningDate: "2023-06-15" },
-  { id: 3, name: "Amit Patel", department: "Mechanical", designation: "Professor", status: "On Leave", joiningDate: "2021-08-12" },
-  { id: 4, name: "Neha Jain", department: "Computer Science", designation: "Assistant Professor", status: "Active", joiningDate: "2024-01-05" },
-  { id: 5, name: "Rohit Gupta", department: "Civil", designation: "Lecturer", status: "Inactive", joiningDate: "2020-07-20" },
-  { id: 6, name: "Anjali Singh", department: "Information Technology", designation: "HOD", status: "Active", joiningDate: "2022-02-18" },
-  { id: 7, name: "Vikas Yadav", department: "Mechanical", designation: "Assistant Professor", status: "Active", joiningDate: "2023-09-11" },
-  { id: 8, name: "Pooja Mishra", department: "Computer Science", designation: "Lecturer", status: "On Leave", joiningDate: "2021-11-01" },
-];
-
-const leaveRequests: LeaveRequest[] = [
-  { id: 1, teacherName: "Amit Patel", department: "Mechanical", type: "Sick Leave", days: 3, status: "Approved" },
-  { id: 2, teacherName: "Pooja Mishra", department: "Computer Science", type: "Casual Leave", days: 2, status: "Approved" },
-  { id: 3, teacherName: "Rahul Sharma", department: "Computer Science", type: "Earned Leave", days: 5, status: "Pending" },
-  { id: 4, teacherName: "Neha Jain", department: "Computer Science", type: "Casual Leave", days: 1, status: "Rejected" },
-  { id: 5, teacherName: "Vikas Yadav", department: "Mechanical", type: "Sick Leave", days: 2, status: "Pending" },
-];
-
-const departments = [
-  "All Departments",
-  ...Array.from(new Set(teachers.map((teacher) => teacher.department))),
-];
 
 function StatCard({
   title,
@@ -102,10 +78,91 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function TeacherReportsPage() {
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+
   const [department, setDepartment] = useState("All Departments");
   const [status, setStatus] = useState("All Status");
   const [search, setSearch] = useState("");
-  const router = useRouter()
+  const router = useRouter();
+
+  useEffect(() => {
+    async function loadReports() {
+      try {
+        setLoading(true);
+        const [teachersRes, leavesRes] = await Promise.allSettled([
+          api.get("/teachers"),
+          api.get("/attendance/leaves?role=TEACHER"),
+        ]);
+
+        if (teachersRes.status === "fulfilled" && teachersRes.value?.teachers) {
+          const mappedTeachers: Teacher[] = teachersRes.value.teachers.map((t: any, idx: number) => {
+            const rawStatus = (t.status || "Active").toLowerCase();
+            const status: TeacherStatus =
+              rawStatus === "on leave" || rawStatus === "on_leave"
+                ? "On Leave"
+                : rawStatus === "inactive"
+                ? "Inactive"
+                : "Active";
+
+            return {
+              id: t.teacherId || t._id || idx + 1,
+              name: t.name,
+              department: t.department || "General Academics",
+              designation: t.designation || "Faculty",
+              status,
+              joiningDate: t.joiningDate
+                ? t.joiningDate.slice(0, 10)
+                : t.createdAt
+                ? t.createdAt.slice(0, 10)
+                : "—",
+            };
+          });
+          setTeachers(mappedTeachers);
+        }
+
+        if (leavesRes.status === "fulfilled" && leavesRes.value?.leaves) {
+          const mappedLeaves: LeaveRequest[] = leavesRes.value.leaves.map((l: any, idx: number) => {
+            const days =
+              l.days ||
+              (l.startDate && l.endDate
+                ? Math.max(1, Math.ceil((new Date(l.endDate).getTime() - new Date(l.startDate).getTime()) / (1000 * 3600 * 24)) + 1)
+                : 1);
+            const status =
+              l.status === "APPROVED" || l.status === "Approved"
+                ? "Approved"
+                : l.status === "REJECTED" || l.status === "Rejected"
+                ? "Rejected"
+                : "Pending";
+
+            return {
+              id: l._id || idx + 1,
+              teacherName: l.applicantName || l.teacher?.name || l.user?.name || "Unknown Teacher",
+              department: l.department || l.teacher?.department || l.user?.department || "Unassigned",
+              type: l.leaveType || l.type || "Casual",
+              days,
+              status,
+            };
+          });
+          setLeaveRequests(mappedLeaves);
+        }
+      } catch (err) {
+        console.error("Failed to load teacher reports:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadReports();
+  }, []);
+
+  const departments = useMemo(() => {
+    return [
+      "All Departments",
+      ...Array.from(new Set(teachers.map((teacher) => teacher.department))).filter(Boolean),
+    ];
+  }, [teachers]);
 
   const filteredTeachers = useMemo(() => {
     return teachers.filter((teacher) => {
@@ -121,7 +178,7 @@ export default function TeacherReportsPage() {
 
       return matchesDepartment && matchesStatus && matchesSearch;
     });
-  }, [department, status, search]);
+  }, [teachers, department, status, search]);
 
   const filteredLeaves = useMemo(() => {
     return leaveRequests.filter(
@@ -129,7 +186,7 @@ export default function TeacherReportsPage() {
         department === "All Departments" ||
         leave.department === department
     );
-  }, [department]);
+  }, [leaveRequests, department]);
 
   const activeCount = filteredTeachers.filter(
     (teacher) => teacher.status === "Active"
@@ -213,12 +270,12 @@ export default function TeacherReportsPage() {
       {/* Header */}
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-         <button
-                  onClick={() => router.back()}
-                  className="mb-5 inline-flex items-center cursor-pointer gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-                  >
-                  <ArrowLeft size={17} />
-                   Back
+          <button
+            onClick={() => router.back()}
+            className="mb-5 inline-flex items-center cursor-pointer gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+          >
+            <ArrowLeft size={17} />
+            Back
           </button>
 
           <h1 className="text-2xl font-bold text-slate-900">
@@ -231,7 +288,8 @@ export default function TeacherReportsPage() {
 
         <button
           onClick={exportCSV}
-          className="inline-flex items-center justify-center gap-2 rounded-lg bg-yellow-300 px-4 py-2.5 text-sm font-bold text-slate-900 transition hover:bg-yellow-400"
+          disabled={filteredTeachers.length === 0}
+          className="inline-flex items-center justify-center gap-2 rounded-lg bg-yellow-300 px-4 py-2.5 text-sm font-bold text-slate-900 transition hover:bg-yellow-400 disabled:opacity-50 cursor-pointer"
         >
           <Download size={18} />
           Export CSV
@@ -286,25 +344,25 @@ export default function TeacherReportsPage() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard
             title="Total Teachers"
-            value={filteredTeachers.length}
+            value={loading ? 0 : filteredTeachers.length}
             icon={Users}
             color="bg-blue-100 text-blue-700"
           />
           <StatCard
             title="Active Teachers"
-            value={activeCount}
+            value={loading ? 0 : activeCount}
             icon={UserCheck}
             color="bg-green-100 text-green-700"
           />
           <StatCard
             title="On Leave"
-            value={onLeaveCount}
+            value={loading ? 0 : onLeaveCount}
             icon={CalendarDays}
             color="bg-yellow-100 text-yellow-700"
           />
           <StatCard
             title="Inactive Teachers"
-            value={inactiveCount}
+            value={loading ? 0 : inactiveCount}
             icon={UserX}
             color="bg-red-100 text-red-700"
           />
@@ -321,7 +379,12 @@ export default function TeacherReportsPage() {
             </h2>
           </div>
 
-          {departmentSummary.length > 0 ? (
+          {loading ? (
+            <div className="flex items-center justify-center py-8 text-sm text-gray-500">
+              <Loader2 className="mr-2 animate-spin text-yellow-500" size={18} />
+              Loading department counts...
+            </div>
+          ) : departmentSummary.length > 0 ? (
             <div className="space-y-5">
               {departmentSummary.map((item) => {
                 const percentage =
@@ -368,40 +431,45 @@ export default function TeacherReportsPage() {
             <div className="rounded-lg bg-green-50 p-4">
               <p className="text-sm text-green-700">Approved Leaves</p>
               <p className="mt-2 text-2xl font-bold text-green-800">
-                {approvedLeaves}
+                {loading ? 0 : approvedLeaves}
               </p>
             </div>
 
             <div className="rounded-lg bg-yellow-50 p-4">
               <p className="text-sm text-yellow-700">Pending Leaves</p>
               <p className="mt-2 text-2xl font-bold text-yellow-800">
-                {pendingLeaves}
+                {loading ? 0 : pendingLeaves}
               </p>
             </div>
           </div>
 
           <div className="mt-5 space-y-3">
-            {filteredLeaves.map((leave) => (
-              <div
-                key={leave.id}
-                className="flex flex-col justify-between gap-2 border-b border-gray-100 pb-3 sm:flex-row sm:items-center"
-              >
-                <div>
-                  <p className="text-sm font-semibold text-slate-900">
-                    {leave.teacherName}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {leave.type} · {leave.days} days
-                  </p>
-                </div>
-                <StatusBadge status={leave.status} />
+            {loading ? (
+              <div className="flex items-center justify-center py-6 text-sm text-gray-500">
+                <Loader2 className="mr-2 animate-spin text-yellow-500" size={18} />
+                Loading leave records...
               </div>
-            ))}
-
-            {filteredLeaves.length === 0 && (
+            ) : filteredLeaves.length === 0 ? (
               <p className="py-5 text-center text-sm text-gray-500">
-                No leave records found.
+                No leave records found in MongoDB.
               </p>
+            ) : (
+              filteredLeaves.map((leave) => (
+                <div
+                  key={leave.id}
+                  className="flex flex-col justify-between gap-2 border-b border-gray-100 pb-3 sm:flex-row sm:items-center"
+                >
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">
+                      {leave.teacherName}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {leave.type} · {leave.days} days
+                    </p>
+                  </div>
+                  <StatusBadge status={leave.status} />
+                </div>
+              ))
             )}
           </div>
         </div>
@@ -422,8 +490,8 @@ export default function TeacherReportsPage() {
             </p>
           </div>
 
-          <span className="text-xs text-gray-500">
-            Demo report data
+          <span className="text-xs font-semibold text-emerald-600">
+            Connected to MongoDB
           </span>
         </div>
 
@@ -440,14 +508,21 @@ export default function TeacherReportsPage() {
             </thead>
 
             <tbody className="divide-y divide-gray-100">
-              {filteredTeachers.map((teacher) => (
+              {loading ? (
+                <tr>
+                  <td colSpan={5} className="px-5 py-10 text-center text-gray-500">
+                    <Loader2 className="mr-2 inline animate-spin text-yellow-500" size={18} />
+                    Loading teacher reports...
+                  </td>
+                </tr>
+              ) : filteredTeachers.map((teacher) => (
                 <tr key={teacher.id} className="hover:bg-gray-50">
                   <td className="px-5 py-4">
                     <p className="font-semibold text-slate-900">
                       {teacher.name}
                     </p>
                     <p className="text-xs text-gray-500">
-                      ID: TCH{String(teacher.id).padStart(3, "0")}
+                      ID: {teacher.id}
                     </p>
                   </td>
 
@@ -471,22 +546,16 @@ export default function TeacherReportsPage() {
                 </tr>
               ))}
 
-              {filteredTeachers.length === 0 && (
+              {!loading && filteredTeachers.length === 0 && (
                 <tr>
                   <td colSpan={5} className="px-5 py-10 text-center text-gray-500">
-                    No teacher records found.
+                    No teacher records found in MongoDB.
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
-      </div>
-
-      <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-900">
-        <strong>Note:</strong> This report currently uses frontend mock data.
-        CSV export downloads the currently filtered teacher records. Backend
-        integration is required for live institutional reports.
       </div>
     </div>
   );

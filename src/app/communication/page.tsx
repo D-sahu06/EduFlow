@@ -1,6 +1,6 @@
-
 "use client";
 
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Megaphone,
@@ -10,7 +10,9 @@ import {
   ArrowUpRight,
   MessageSquare,
   ArrowLeft,
+  Loader2,
 } from "lucide-react";
+import { api } from "@/lib/api";
 
 const features = [
   {
@@ -37,22 +39,67 @@ const features = [
       "Review important alerts and notification records.",
     icon: BellRing,
     color: "bg-emerald-100 text-emerald-700",
-    route: "/communication/notifications",
+    route: "/communication/notification",
     count: "View alerts",
   },
-  {
-    title: "Events & Calendar",
-    description:
-      "Organize school events and keep track of upcoming activities.",
-    icon: CalendarDays,
-    color: "bg-purple-100 text-purple-700",
-    route: "/communication/events",
-    count: "Manage events",
-  },
+  // {
+  //   title: "Events & Calendar",
+  //   description:
+  //     "Organize school events and keep track of upcoming activities.",
+  //   icon: CalendarDays,
+  //   color: "bg-purple-100 text-purple-700",
+  //   route: "/communication/events",
+  //   count: "Manage events",
+  // },
 ];
+
 
 export default function CommunicationPage() {
   const router = useRouter();
+
+  const [announcementsCount, setAnnouncementsCount] = useState<number>(0);
+  const [messagesCount, setMessagesCount] = useState<number>(0);
+  const [notificationsCount, setNotificationsCount] = useState<number>(0);
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+
+  const fetchStatistics = async () => {
+    try {
+      setLoading(true);
+      const [resAnnounce, resMessages, resNotifications] = await Promise.allSettled([
+        api.get<{ count?: number; announcements?: any[] }>("/communication/announcements"),
+        api.get<{ count?: number; messages?: any[] }>("/communication/messages"),
+        api.get<{ totalCount?: number; unreadCount?: number; notifications?: any[] }>("/communication/notifications"),
+      ]);
+
+      if (resAnnounce.status === "fulfilled" && resAnnounce.value) {
+        setAnnouncementsCount(
+          resAnnounce.value.count ?? resAnnounce.value.announcements?.length ?? 0
+        );
+      }
+
+      if (resMessages.status === "fulfilled" && resMessages.value) {
+        setMessagesCount(
+          resMessages.value.count ?? resMessages.value.messages?.length ?? 0
+        );
+      }
+
+      if (resNotifications.status === "fulfilled" && resNotifications.value) {
+        setNotificationsCount(
+          resNotifications.value.totalCount ?? resNotifications.value.notifications?.length ?? 0
+        );
+        setUnreadNotificationsCount(resNotifications.value.unreadCount ?? 0);
+      }
+    } catch (err) {
+      console.error("Failed to load communication statistics:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStatistics();
+  }, []);
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 sm:p-6 lg:p-8">
@@ -73,9 +120,9 @@ export default function CommunicationPage() {
         </div>
 
         <div>
-          <p className="text-sm text-slate-500">
+          {/* <p className="text-sm text-slate-500">
             ERP / Communication
-          </p>
+          </p> */}
           <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">
             Communication Center
           </h1>
@@ -89,7 +136,9 @@ export default function CommunicationPage() {
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-2xl border border-slate-200 bg-white p-5">
           <p className="text-sm text-slate-500">Total Announcements</p>
-          <p className="mt-3 text-3xl font-bold text-slate-900">0</p>
+          <p className="mt-3 text-3xl font-bold text-slate-900">
+            {loading ? "-" : announcementsCount}
+          </p>
           <p className="mt-2 text-xs text-slate-400">
             Notices created in the system
           </p>
@@ -97,7 +146,9 @@ export default function CommunicationPage() {
 
         <div className="rounded-2xl border border-slate-200 bg-white p-5">
           <p className="text-sm text-slate-500">Messages</p>
-          <p className="mt-3 text-3xl font-bold text-slate-900">0</p>
+          <p className="mt-3 text-3xl font-bold text-slate-900">
+            {loading ? "-" : messagesCount}
+          </p>
           <p className="mt-2 text-xs text-slate-400">
             Communication records
           </p>
@@ -105,19 +156,21 @@ export default function CommunicationPage() {
 
         <div className="rounded-2xl border border-slate-200 bg-white p-5">
           <p className="text-sm text-slate-500">Notifications</p>
-          <p className="mt-3 text-3xl font-bold text-slate-900">0</p>
+          <p className="mt-3 text-3xl font-bold text-slate-900">
+            {loading ? "-" : notificationsCount}
+          </p>
           <p className="mt-2 text-xs text-slate-400">
-            Alerts recorded
+            {loading ? "Loading alerts..." : `${unreadNotificationsCount} unread alerts`}
           </p>
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-5">
+        {/* <div className="rounded-2xl border border-slate-200 bg-white p-5">
           <p className="text-sm text-slate-500">Upcoming Events</p>
           <p className="mt-3 text-3xl font-bold text-slate-900">0</p>
           <p className="mt-2 text-xs text-slate-400">
             Scheduled activities
           </p>
-        </div>
+        </div> */}
       </div>
 
       {/* Communication Modules */}

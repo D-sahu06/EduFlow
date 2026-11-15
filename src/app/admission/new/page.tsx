@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, type FormEvent } from "react";
@@ -10,11 +9,17 @@ import {
   Users,
   FileText,
   CheckCircle2,
+  Loader2,
+  AlertCircle,
 } from "lucide-react";
+import { api } from "@/lib/api";
 
 export default function NewAdmissionPage() {
   const router = useRouter();
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [assignedAppNo, setAssignedAppNo] = useState("");
+  const [apiError, setApiError] = useState("");
 
   const [form, setForm] = useState({
     firstName: "",
@@ -28,24 +33,24 @@ export default function NewAdmissionPage() {
     state: "",
     parentName: "",
     parentPhone: "",
+    parentRelation: "Father",
+    parentEmail: "",
     course: "",
     previousSchool: "",
-    qualification: "",
     percentage: "",
     passingYear: "",
+    qualification: "",
     applicationDate: new Date().toISOString().slice(0, 10),
     documents: [] as File[],
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  function updateField(
-    field: string,
-    value: string | File[]
-  ) {
+  function updateField(field: string, value: string | File[]) {
     setForm((current) => ({ ...current, [field]: value }));
     setErrors((current) => ({ ...current, [field]: "" }));
     setSubmitted(false);
+    setApiError("");
   }
 
   function validate() {
@@ -56,7 +61,7 @@ export default function NewAdmissionPage() {
 
     if (!form.dob) {
       nextErrors.dob = "Date of birth is required.";
-    } else if (form.dob > new Date().toISOString().slice(0, 10)) {
+    } else if (new Date(form.dob) > new Date()) {
       nextErrors.dob = "Date of birth cannot be in the future.";
     }
 
@@ -77,49 +82,43 @@ export default function NewAdmissionPage() {
     if (!form.state.trim()) nextErrors.state = "State is required.";
 
     if (!form.parentName.trim()) {
-      nextErrors.parentName = "Parent/guardian name is required.";
+      nextErrors.parentName = "Parent/Guardian name is required.";
     }
 
     if (!/^[6-9]\d{9}$/.test(form.parentPhone)) {
-      nextErrors.parentPhone = "Enter a valid 10-digit mobile number.";
+      nextErrors.parentPhone = "Enter a valid 10-digit Indian mobile number.";
     }
 
-    if (!form.course) nextErrors.course = "Please select a course.";
-    if (!form.qualification) {
-      nextErrors.qualification = "Select the previous qualification.";
+    if (!form.course.trim()) nextErrors.course = "Course applied for is required.";
+    if (!form.qualification.trim()) {
+      nextErrors.qualification = "Previous qualification is required.";
     }
 
-    if (form.percentage === "") {
+    const percentage = Number(form.percentage);
+    if (!form.percentage || Number.isNaN(percentage)) {
       nextErrors.percentage = "Percentage is required.";
-    } else if (
-      !Number.isFinite(Number(form.percentage)) ||
-      Number(form.percentage) < 0 ||
-      Number(form.percentage) > 100
-    ) {
+    } else if (percentage < 0 || percentage > 100) {
       nextErrors.percentage = "Percentage must be between 0 and 100.";
     }
 
-    if (
-      !/^\d{4}$/.test(form.passingYear) ||
-      Number(form.passingYear) > new Date().getFullYear()
-    ) {
-      nextErrors.passingYear = "Enter a valid passing year.";
+    const passingYear = Number(form.passingYear);
+    const currentYear = new Date().getFullYear();
+    if (!form.passingYear || Number.isNaN(passingYear)) {
+      nextErrors.passingYear = "Passing year is required.";
+    } else if (passingYear < 1950 || passingYear > currentYear) {
+      nextErrors.passingYear = `Enter a year between 1950 and ${currentYear}.`;
     }
 
     if (!form.applicationDate) {
       nextErrors.applicationDate = "Application date is required.";
-    } else if (form.applicationDate > new Date().toISOString().slice(0, 10)) {
+    } else if (new Date(form.applicationDate) > new Date()) {
       nextErrors.applicationDate = "Application date cannot be in the future.";
-    }
-
-    if (form.documents.length === 0) {
-      nextErrors.documents = "Upload at least one supporting document.";
     }
 
     return nextErrors;
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const validationErrors = validate();
@@ -127,8 +126,33 @@ export default function NewAdmissionPage() {
 
     if (Object.keys(validationErrors).length > 0) return;
 
-    // Demo only: records are not yet connected to a database.
-    setSubmitted(true);
+    setSubmitting(true);
+    setApiError("");
+
+    try {
+      const payload = {
+        applicantName: `${form.firstName} ${form.lastName}`.trim(),
+        email: form.email.trim().toLowerCase(),
+        phone: form.phone.trim(),
+        applyingForClass: form.course.trim(),
+        previousQualification: form.qualification.trim(),
+        previousSchool: form.previousSchool.trim() || "Not specified",
+        previousPercentage: Number(form.percentage) || 0,
+        guardianName: form.parentName.trim(),
+        guardianPhone: form.parentPhone.trim(),
+      };
+
+      const res = await api.post("/admissions/apply", payload);
+
+      if (res && res.success) {
+        setAssignedAppNo(res.application?.applicationNumber || "APP-" + Date.now().toString().slice(-4));
+        setSubmitted(true);
+      }
+    } catch (err: any) {
+      setApiError(err.message || "Failed to submit application ");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   function resetForm() {
@@ -144,65 +168,77 @@ export default function NewAdmissionPage() {
       state: "",
       parentName: "",
       parentPhone: "",
+      parentRelation: "Father",
+      parentEmail: "",
       course: "",
       previousSchool: "",
-      qualification: "",
       percentage: "",
       passingYear: "",
+      qualification: "",
       applicationDate: new Date().toISOString().slice(0, 10),
       documents: [],
     });
     setErrors({});
     setSubmitted(false);
+    setApiError("");
+    setAssignedAppNo("");
   }
 
   const inputClass =
-    "mt-1.5 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-yellow-400 focus:ring-2 focus:ring-yellow-100";
+    "mt-1.5 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition focus:border-yellow-400 focus:ring-4 focus:ring-yellow-100";
 
-  function errorText(field: string) {
-    return errors[field] ? (
+  const errorText = (field: string) =>
+    errors[field] ? (
       <p className="mt-1 text-xs text-red-600">{errors[field]}</p>
     ) : null;
-  }
 
   return (
     <main className="min-h-screen bg-gray-50 p-4 md:p-8">
       <button
         type="button"
         onClick={() => router.back()}
-        className="mb-5 inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:border-yellow-400 hover:bg-yellow-50"
+        className="mb-5 inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:border-yellow-400 hover:bg-yellow-50 cursor-pointer"
       >
         <ArrowLeft size={18} />
         Back
       </button>
 
       <div className="mb-7">
-       
         <h1 className="text-2xl font-bold text-gray-900 md:text-3xl">
-          New Admission
+          New Admission Form
         </h1>
-        <p className="mt-2 text-sm text-gray-500">
-          Enter applicant information to create a new admission application.
+        <p className="mt-1 text-sm text-gray-500">
+          Enter applicant details and submit the application.
         </p>
       </div>
 
       {submitted && (
-        <div className="mb-6 flex items-start gap-3 rounded-xl border border-green-200 bg-green-50 p-4">
-          <CheckCircle2 className="mt-0.5 text-green-700" size={22} />
-          <div>
-            <p className="font-semibold text-green-800">
-              Form validation successful!
-            </p>
-            <p className="mt-1 text-sm text-green-700">
-              The form is valid, but this demo has not saved the application
-              to a database. Connect the backend to create a real application.
-            </p>
+        <div className="mb-6 rounded-2xl border border-green-200 bg-green-50 p-5">
+          <div className="flex items-start gap-3">
+            <CheckCircle2 className="mt-0.5 text-green-600 shrink-0" size={22} />
+            <div>
+              <p className="font-bold text-green-900">
+                Application Submitted Successfully!
+              </p>
+              <p className="mt-1 text-sm text-green-700">
+                Application number: <strong>{assignedAppNo}</strong>. Saved to erp
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {apiError && (
+        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-5">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="mt-0.5 text-red-600 shrink-0" size={22} />
+            <p className="text-sm font-medium text-red-700">{apiError}</p>
           </div>
         </div>
       )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Personal Information */}
+        {/* Personal Details */}
         <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm md:p-7">
           <div className="mb-6 flex items-center gap-3">
             <div className="rounded-xl bg-yellow-100 p-3 text-yellow-800">
@@ -210,10 +246,10 @@ export default function NewAdmissionPage() {
             </div>
             <div>
               <h2 className="text-lg font-bold text-gray-900">
-                Personal Information
+                Personal Details
               </h2>
               <p className="text-sm text-gray-500">
-                Applicant basic details
+                Basic information about the student applicant
               </p>
             </div>
           </div>
@@ -272,7 +308,6 @@ export default function NewAdmissionPage() {
                 <option value="Male">Male</option>
                 <option value="Female">Female</option>
                 <option value="Other">Other</option>
-                <option value="Prefer not to say">Prefer not to say</option>
               </select>
               {errorText("gender")}
             </div>
@@ -423,20 +458,13 @@ export default function NewAdmissionPage() {
               <label className="text-sm font-medium text-gray-700">
                 Course Applied For *
               </label>
-              <select
+              <input
+                type="text"
                 className={inputClass}
                 value={form.course}
                 onChange={(e) => updateField("course", e.target.value)}
-              >
-                <option value="">Select course</option>
-                <option value="B.Tech - IT">B.Tech - IT</option>
-                <option value="B.Tech - CSE">B.Tech - CSE</option>
-                <option value="B.Tech - Mechanical">B.Tech - Mechanical</option>
-                <option value="BBA">BBA</option>
-                <option value="BCA">BCA</option>
-                <option value="MBA">MBA</option>
-                <option value="MCA">MCA</option>
-              </select>
+                placeholder="e.g. B.Tech - IT, Class 10, BCA"
+              />
               {errorText("course")}
             </div>
 
@@ -444,18 +472,13 @@ export default function NewAdmissionPage() {
               <label className="text-sm font-medium text-gray-700">
                 Previous Qualification *
               </label>
-              <select
+              <input
+                type="text"
                 className={inputClass}
                 value={form.qualification}
                 onChange={(e) => updateField("qualification", e.target.value)}
-              >
-                <option value="">Select qualification</option>
-                <option value="10th">10th</option>
-                <option value="12th">12th</option>
-                <option value="Diploma">Diploma</option>
-                <option value="Graduation">Graduation</option>
-                <option value="Post Graduation">Post Graduation</option>
-              </select>
+                placeholder="e.g. 10th, 12th, Diploma, Graduation"
+              />
               {errorText("qualification")}
             </div>
 
@@ -538,7 +561,7 @@ export default function NewAdmissionPage() {
             </div>
           </div>
 
-          <label className="block rounded-xl border-2 border-dashed border-gray-200 p-6 text-center transition hover:border-yellow-400">
+          <label className="block rounded-xl border-2 border-dashed border-gray-200 p-6 text-center transition hover:border-yellow-400 cursor-pointer">
             <FileText className="mx-auto mb-3 text-gray-400" size={30} />
             <span className="font-semibold text-gray-800">
               Choose supporting documents
@@ -550,7 +573,7 @@ export default function NewAdmissionPage() {
               type="file"
               multiple
               accept=".pdf,.jpg,.jpeg,.png"
-              className="mt-4 block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-yellow-100 file:px-4 file:py-2 file:font-semibold file:text-gray-800"
+              className="mt-4 block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-yellow-100 file:px-4 file:py-2 file:font-semibold file:text-gray-800 cursor-pointer"
               onChange={(e) => {
                 const files = Array.from(e.target.files ?? []);
                 const valid = files.filter(
@@ -587,7 +610,7 @@ export default function NewAdmissionPage() {
                         form.documents.filter((_, i) => i !== index)
                       )
                     }
-                    className="shrink-0 text-red-600 hover:text-red-700"
+                    className="shrink-0 text-red-600 hover:text-red-700 cursor-pointer"
                   >
                     Remove
                   </button>
@@ -604,16 +627,24 @@ export default function NewAdmissionPage() {
           <button
             type="button"
             onClick={resetForm}
-            className="rounded-xl border border-gray-200 bg-white px-6 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-100"
+            className="rounded-xl border border-gray-200 bg-white px-6 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-100 cursor-pointer"
           >
             Reset Form
           </button>
 
           <button
             type="submit"
-            className="rounded-xl bg-yellow-400 px-6 py-3 text-sm font-semibold text-gray-900 transition hover:bg-yellow-500"
+            disabled={submitting}
+            className="flex items-center justify-center gap-2 rounded-xl bg-yellow-400 px-6 py-3 text-sm font-semibold text-gray-900 transition hover:bg-yellow-500 disabled:opacity-50 cursor-pointer"
           >
-            Validate Application
+            {submitting ? (
+              <>
+                <Loader2 className="animate-spin" size={18} />
+                <span>Saving Application...</span>
+              </>
+            ) : (
+              "Submit Application"
+            )}
           </button>
         </div>
       </form>

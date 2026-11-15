@@ -1,17 +1,20 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 * {
   box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-  font-family: Arial, Helvetica, sans-serif;
 }
 
 :root {
   --background: #ffffff;
   --foreground: #171717;
+}
+
+html.dark {
+  --background: #0b0f19;
+  --foreground: #f3f4f6;
+  color-scheme: dark;
 }
 
 @theme inline {
@@ -21,17 +24,177 @@ body {
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
+  margin: 0;
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* ========================================================
+   UNIVERSAL DARK MODE SYSTEM
+   Applies to all ERP pages, cards, sidebars, tables & inputs
+   ======================================================== */
+
+html.dark,
+body.dark {
+  background-color: #0b0f19 !important;
+  color: #f3f4f6 !important;
+  color-scheme: dark;
+}
+
+/* Page containers & wrappers */
+html.dark .bg-slate-50,
+html.dark .bg-gray-50,
+html.dark .bg-\[\#fbfcf9\],
+body.dark .bg-slate-50,
+body.dark .bg-gray-50,
+body.dark .bg-\[\#fbfcf9\] {
+  background-color: #0b0f19 !important;
+  color: #f3f4f6 !important;
+}
+
+/* Cards, sidebars, modals, panels */
+html.dark .bg-white,
+body.dark .bg-white {
+  background-color: #151d2f !important;
+  color: #f8fafc !important;
+}
+
+/* Secondary backgrounds / pills / tags */
+html.dark .bg-slate-100,
+html.dark .bg-gray-100,
+body.dark .bg-slate-100,
+body.dark .bg-gray-100 {
+  background-color: #1e293b !important;
+  color: #f8fafc !important;
+}
+
+/* Borders */
+html.dark .border,
+html.dark .border-t,
+html.dark .border-b,
+html.dark .border-l,
+html.dark .border-r,
+html.dark .border-gray-100,
+html.dark .border-slate-100,
+html.dark .border-gray-200,
+html.dark .border-slate-200,
+html.dark .border-gray-300,
+html.dark .border-slate-300,
+body.dark .border,
+body.dark .border-gray-100,
+body.dark .border-slate-100,
+body.dark .border-gray-200,
+body.dark .border-slate-200 {
+  border-color: #1e293b !important;
+}
+
+/* Headings & dark text */
+html.dark .text-slate-950,
+html.dark .text-gray-950,
+html.dark .text-slate-900,
+html.dark .text-gray-900,
+html.dark .text-slate-800,
+html.dark .text-gray-800,
+html.dark .text-black,
+body.dark .text-slate-950,
+body.dark .text-gray-950,
+body.dark .text-slate-900,
+body.dark .text-gray-900,
+body.dark .text-slate-800,
+body.dark .text-gray-800,
+body.dark .text-black {
+  color: #f8fafc !important;
+}
+
+/* Secondary & muted text */
+html.dark .text-slate-700,
+html.dark .text-gray-700,
+html.dark .text-slate-600,
+html.dark .text-gray-600,
+body.dark .text-slate-700,
+body.dark .text-gray-700,
+body.dark .text-slate-600,
+body.dark .text-gray-600 {
+  color: #cbd5e1 !important;
+}
+
+html.dark .text-slate-500,
+html.dark .text-gray-500,
+html.dark .text-slate-400,
+html.dark .text-gray-400,
+body.dark .text-slate-500,
+body.dark .text-gray-500,
+body.dark .text-slate-400,
+body.dark .text-gray-400 {
+  color: #94a3b8 !important;
+}
+
+/* Headers & Sidebars */
+html.dark aside,
+body.dark aside,
+html.dark header,
+body.dark header {
+  background-color: #151d2f !important;
+  border-color: #1e293b !important;
+}
+
+/* Inputs, Selects, Textareas */
+html.dark input:not([type="checkbox"]):not([type="radio"]),
+html.dark select,
+html.dark textarea,
+body.dark input:not([type="checkbox"]):not([type="radio"]),
+body.dark select,
+body.dark textarea {
+  background-color: #1e293b !important;
+  color: #f8fafc !important;
+  border-color: #334155 !important;
+}
+
+html.dark input::placeholder,
+html.dark textarea::placeholder,
+body.dark input::placeholder,
+body.dark textarea::placeholder {
+  color: #64748b !important;
+}
+
+/* Table styling */
+html.dark table,
+body.dark table {
+  color: #f8fafc !important;
+}
+
+html.dark thead tr,
+html.dark th,
+body.dark thead tr,
+body.dark th {
+  background-color: #151d2f !important;
+  color: #cbd5e1 !important;
+  border-color: #334155 !important;
+}
+
+html.dark tbody tr,
+body.dark tbody tr {
+  border-color: #1e293b !important;
+}
+
+html.dark tbody tr:hover,
+body.dark tbody tr:hover {
+  background-color: #1e293b !important;
+}
+
+/* Hover highlights */
+html.dark .hover\:bg-gray-50:hover,
+html.dark .hover\:bg-slate-50:hover,
+html.dark .hover\:bg-gray-100:hover,
+html.dark .hover\:bg-slate-100:hover,
+body.dark .hover\:bg-gray-50:hover,
+body.dark .hover\:bg-slate-50:hover,
+body.dark .hover\:bg-gray-100:hover,
+body.dark .hover\:bg-slate-100:hover {
+  background-color: #1e293b !important;
 }
 
 .scrollbar-hide {
@@ -46,4 +209,27 @@ body {
 html,
 body {
   overflow-x: hidden;
+}
+
+/* Sidebar toggle smooth layout transitions */
+[data-sidebar-content] {
+  transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+html.sidebar-collapsed [data-sidebar-content],
+body.sidebar-collapsed [data-sidebar-content],
+html.sidebar-collapsed .md\:ml-64,
+body.sidebar-collapsed .md\:ml-64 {
+  margin-left: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+html.sidebar-collapsed aside[data-sidebar="true"],
+body.sidebar-collapsed aside[data-sidebar="true"] {
+  transform: translateX(-100%) !important;
+}
+
+aside[data-sidebar="true"] {
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }

@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import Sidebar from "@/components/sidebar";
 import Topbar from "@/components/topbar";
+import { useSidebar } from "@/lib/sidebar";
+import { api } from "@/lib/api";
 
 import {
   UserRound,
@@ -40,156 +42,217 @@ type Profile = {
   address: string;
   profileImage: string;
   institution: string;
+  role: string;
+  department?: string;
+  className?: string;
+  rollNumber?: string;
+  employeeId?: string;
 };
 
-const defaultProfile: Profile = {
-  firstName: "Dewansh",
-  lastName: "Sahu",
-  fullName: "Dewansh Sahu",
-  username: "dewansh.sahu",
-  email: "dewanshsahu89@gmail.com",
-  birthDate: "2005-07-09",
-  phone: "7869135957",
-  gender: "Male",
-  status: "Unmarried",
-  maritalStatus: "Unmarried",
+const emptyProfile: Profile = {
+  firstName: "",
+  lastName: "",
+  fullName: "",
+  username: "",
+  email: "",
+  birthDate: "",
+  phone: "",
+  gender: "",
+  status: "Active",
+  maritalStatus: "",
   emergencyContact: "",
   emergencyRelation: "",
   emergencyName: "",
   address: "",
   profileImage: "",
-  institution: "Not added",
+  institution: "EduFlow Academy",
+  role: "User",
 };
-
-const attendance: Record<number, string> = {
-  2: "Absent",
-  5: "Absent",
-  8: "Present",
-  9: "Present",
-  12: "Absent",
-  15: "Present",
-  20: "Holiday",
-  22: "Present",
-  23: "Present",
-};
-
-function getAccountRole(): string {
-  const userKeys = [
-    "edunexus-user",
-    "eduflow-user",
-    "currentUser",
-    "user",
-  ];
-
-  for (const key of userKeys) {
-    const savedUser = localStorage.getItem(key);
-
-    if (!savedUser) continue;
-
-    try {
-      const user = JSON.parse(savedUser);
-      const rawRole = String(user?.role ?? "").trim().toLowerCase();
-
-      if (!rawRole) continue;
-
-      if (["admin", "administrator"].includes(rawRole)) {
-        return "Administrator";
-      }
-
-      if (rawRole === "teacher" || rawRole === "faculty") {
-        return "Teacher";
-      }
-
-      return rawRole.charAt(0).toUpperCase() + rawRole.slice(1);
-    } catch {
-      // Ignore invalid user data.
-    }
-  }
-
-  return "Administrator";
-}
 
 export default function ProfilePage() {
-  // const [profile, setProfile] = useState<Profile>(defaultProfile);
+  const { sidebarOpen } = useSidebar();
+  const [profile, setProfile] = useState<Profile>(emptyProfile);
   const [role, setRole] = useState("Administrator");
-  const [month, setMonth] = useState(new Date(2026, 9, 1));
+  const [month, setMonth] = useState(new Date());
   const [today, setToday] = useState<Date | null>(null);
-  // const [role, setRole] = useState("Administrator");
+  const [attendanceRecords, setAttendanceRecords] = useState<Record<number, any>>({});
+  const [selectedDay, setSelectedDay] = useState<number | null>(null);
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const [attendanceStats, setAttendanceStats] = useState({
+    totalWorkingDays: 0,
+    presentDays: 0,
+    absentDays: 0,
+    lateDays: 0,
+    leaveDays: 0,
+    attendancePercentage: 0,
+  });
 
-  const [profile, setProfile] = useState<Profile>(() => {
-  if (typeof window === "undefined") {
-    return defaultProfile;
-  }
+  const fetchAttendance = async (currentMonth: Date) => {
+    try {
+      setAttendanceLoading(true);
+      const m = currentMonth.getMonth() + 1;
+      const y = currentMonth.getFullYear();
 
-  try {
-    const savedProfile = localStorage.getItem("eduflow-profile");
+      const [recRes, statsRes] = await Promise.allSettled([
+        api.get<{ success?: boolean; records?: any[] }>(`/attendance/self?month=${m}&year=${y}`),
+        api.get<{ success?: boolean; stats?: any }>(`/attendance/self/stats`),
+      ]);
 
-    if (!savedProfile) {
-      return defaultProfile;
+      const records =
+        recRes.status === "fulfilled" && recRes.value && Array.isArray(recRes.value.records)
+          ? recRes.value.records
+          : [];
+
+      const map: Record<number, any> = {};
+      records.forEach((r: any) => {
+        if (!r.date) return;
+        let dayNum: number | null = null;
+        if (typeof r.date === "string" && r.date.includes("-")) {
+          const parts = r.date.split("T")[0].split("-");
+          if (parts.length === 3) {
+            const docYear = parseInt(parts[0], 10);
+            const docMonth = parseInt(parts[1], 10) - 1; // 0-indexed
+            const docDay = parseInt(parts[2], 10);
+            if (docYear === y && docMonth === currentMonth.getMonth()) {
+              dayNum = docDay;
+            }
+          }
+        }
+        if (dayNum === null) {
+          const d = new Date(r.date);
+          if (d.getUTCFullYear() === y && d.getUTCMonth() === currentMonth.getMonth()) {
+            dayNum = d.getUTCDate();
+          } else if (d.getFullYear() === y && d.getMonth() === currentMonth.getMonth()) {
+            dayNum = d.getDate();
+          }
+        }
+        if (dayNum !== null) {
+          map[dayNum] = r;
+        }
+      });
+      setAttendanceRecords(map);
+
+      if (statsRes.status === "fulfilled" && statsRes.value && statsRes.value.stats) {
+        const s = statsRes.value.stats;
+        setAttendanceStats({
+          totalWorkingDays: s.totalWorkingDays || 0,
+          presentDays: s.presentDays || 0,
+          absentDays: s.absentDays || 0,
+          lateDays: s.lateDays || 0,
+          leaveDays: s.leaveDays || 0,
+          attendancePercentage: s.attendancePercentage || 0,
+        });
+      }
+    } catch {
+      setAttendanceRecords({});
+    } finally {
+      setAttendanceLoading(false);
     }
+  };
 
-    const parsed = JSON.parse(savedProfile);
+  const fetchProfile = async () => {
+    try {
+      // 1. Check local cached user first
+      const savedUser = localStorage.getItem("eduflow-user");
+      if (savedUser) {
+        const u = JSON.parse(savedUser);
+        const nameParts = (u.name || "").split(" ");
+        setProfile((prev) => ({
+          ...prev,
+          firstName: u.firstName || nameParts[0] || "",
+          lastName: u.lastName || nameParts.slice(1).join(" ") || "",
+          fullName: u.name || `${u.firstName || ""} ${u.lastName || ""}`.trim(),
+          username: u.username || "",
+          email: u.email || "",
+          phone: u.phone || "",
+          role: u.role || "User",
+          department: u.department || "",
+          institution: u.institution || "EduFlow Academy",
+        }));
+        if (u.role) setRole(u.role.replace("_", " "));
+      }
 
-    return {
-      ...defaultProfile,
-      ...parsed,
-      status: parsed.status ?? defaultProfile.status,
-    };
-  } catch (error) {
-    console.error("Failed to load profile:", error);
-    return defaultProfile;
-  }
-});
+      // 2. Fetch live profile from MongoDB via verified JWT
+      const res = await api.get("/users/profile");
+      if (res && res.user) {
+        const u = res.user;
+        const nameParts = (u.name || "").split(" ");
+        const liveProfile: Profile = {
+          firstName: u.firstName || nameParts[0] || "",
+          lastName: u.lastName || nameParts.slice(1).join(" ") || "",
+          fullName: u.name || `${u.firstName || ""} ${u.lastName || ""}`.trim(),
+          username: u.username || "",
+          email: u.email || "",
+          birthDate: u.birthDate ? u.birthDate.slice(0, 10) : u.dob ? u.dob.slice(0, 10) : "",
+          phone: u.phone || "",
+          gender: u.gender || "",
+          status: u.status || "Active",
+          maritalStatus: u.maritalStatus || "Unmarried",
+          emergencyContact: u.emergencyContact || u.parentPhone || "",
+          emergencyRelation: u.emergencyRelation || (u.parentName ? "Guardian" : ""),
+          emergencyName: u.emergencyName || u.parentName || "",
+          address: u.address || "",
+          profileImage: u.profileImage || "",
+          institution: u.institution || "EduFlow Academy",
+          role: u.role || "User",
+          department: u.department || "",
+          className: u.className || u.class || "",
+          rollNumber: u.rollNumber || "",
+          employeeId: u.employeeId || "",
+        };
+
+        setProfile(liveProfile);
+        if (u.role) setRole(u.role.replace("_", " "));
+        localStorage.setItem("eduflow-user", JSON.stringify(u));
+        localStorage.setItem("eduflow-profile", JSON.stringify(liveProfile));
+      }
+    } catch (err) {
+      console.error("Failed to fetch live profile:", err);
+    }
+  };
+
+  useEffect(() => {
+    const curDate = new Date();
+    setToday(curDate);
+    fetchProfile();
+    fetchAttendance(month);
+
+    window.addEventListener("eduflow-user-change", fetchProfile);
+    return () => window.removeEventListener("eduflow-user-change", fetchProfile);
+  }, []);
+
+  useEffect(() => {
+    fetchAttendance(month);
+  }, [month]);
 
   const year = month.getFullYear();
   const monthIndex = month.getMonth();
-  const daysInMonth = new Date(
-    year,
-    monthIndex + 1,
-    0
-  ).getDate();
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
 
-  // Calendar starts on Monday.
-  const firstDay =
-    (new Date(year, monthIndex, 1).getDay() + 6) % 7;
+  // Calendar starts on Monday
+  const firstDay = (new Date(year, monthIndex, 1).getDay() + 6) % 7;
 
   const calendarDays = [
     ...Array(firstDay).fill(null),
     ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
   ];
 
-  function getStatus(day: number) {
-    const date = new Date(year, monthIndex, day);
-
-    if (date.getDay() === 0) {
-      return "Weekend";
-    }
-
-    if (
-      today &&
-      date.getDate() === today.getDate() &&
-      monthIndex === today.getMonth() &&
-      year === today.getFullYear()
-    ) {
-      return "Today";
-    }
-
-    // Demo attendance data is available for October 2026 only.
-    if (monthIndex !== 9 || year !== 2026) {
-      return "";
-    }
-
-    return attendance[day] || "";
+  function getAttendanceRecord(day: number) {
+    return attendanceRecords[day] || null;
   }
 
   const displayValue = (value: string | undefined) =>
     value?.trim() || "Not added";
 
+  const initials =
+    (profile.firstName?.[0] || profile.fullName?.[0] || "U").toUpperCase() +
+    (profile.lastName?.[0] || "").toUpperCase();
+
   const info = [
     {
       label: "Full Name",
       value: displayValue(
-        `${profile.firstName} ${profile.lastName}`.trim()
+        profile.fullName || `${profile.firstName} ${profile.lastName}`.trim()
       ),
       icon: UserRound,
     },
@@ -220,9 +283,7 @@ export default function ProfilePage() {
     },
     {
       label: "Marital Status",
-      value: displayValue(
-        profile.maritalStatus || profile.status
-      ),
+      value: displayValue(profile.maritalStatus || profile.status),
       icon: UserRound,
     },
     {
@@ -251,10 +312,15 @@ export default function ProfilePage() {
     <div className="min-h-screen overflow-x-hidden bg-gray-50">
       <Sidebar />
 
-      <div className="min-w-0 md:ml-64">
+      <div
+        data-sidebar-content="true"
+        className={`min-w-0 transition-all duration-300 ease-in-out ${
+          sidebarOpen ? "md:ml-64" : "ml-0 md:ml-0 w-full"
+        }`}
+      >
         <Topbar />
 
-        <main className="p-4 sm:p-6 lg:p-8">
+        <main className="px-5 py-6 md:px-8">
           <div className="mb-6" />
 
           {/* Profile cover */}
@@ -266,28 +332,28 @@ export default function ProfilePage() {
             </div>
 
             <div className="flex flex-wrap items-end justify-between gap-4 px-5 pb-5 sm:px-8">
-              <div className=" flex min-w-0 items-end gap-4">
+              <div className="flex min-w-0 items-end gap-4">
                 <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-full border-4 border-white bg-gray-900 text-2xl font-bold text-yellow-400 shadow-md sm:h-28 sm:w-28 sm:text-3xl">
                   {profile.profileImage ? (
                     <Image
                       src={profile.profileImage}
                       alt="Profile"
                       width={112}
-                      height={212}
+                      height={112}
                       unoptimized
                       className="h-full w-full rounded-full object-cover"
                     />
                   ) : (
-                    `${profile.firstName?.[0] ?? "D"}${profile.lastName?.[0] ?? "S"}`
+                    initials
                   )}
                 </div>
 
                 <div className="min-w-0 pb-2">
                   <h1 className="wrap-break-words text-xl font-bold text-gray-900 sm:text-2xl">
-                    {profile.firstName} {profile.lastName}
+                    {profile.fullName || `${profile.firstName} ${profile.lastName}`.trim() || "User"}
                   </h1>
                   <p className="text-sm text-gray-500">
-                    @{profile.username}
+                    @{profile.username || "user"}
                   </p>
                 </div>
               </div>
@@ -309,13 +375,11 @@ export default function ProfilePage() {
                     </h2>
                   </div>
 
-                 
-
                   <Link
                     href="/profile/edit"
                     aria-label="Edit profile information"
                     title="Edit Profile"
-                    className="shrink-0 rounded-lg bg-yellow-400 p-2 text-gray-900 transition hover:bg-yellow-500"
+                    className="shrink-0 rounded-lg bg-yellow-400 p-2 text-gray-900 transition hover:bg-yellow-500 cursor-pointer"
                   >
                     <Pencil size={18} />
                   </Link>
@@ -374,7 +438,7 @@ export default function ProfilePage() {
                       setMonth(new Date(year, monthIndex - 1, 1))
                     }
                     aria-label="Previous month"
-                    className="rounded-lg border border-gray-200 p-2 hover:bg-gray-50"
+                    className="rounded-lg border border-gray-200 p-2 hover:bg-gray-50 cursor-pointer"
                   >
                     <ChevronLeft size={18} />
                   </button>
@@ -392,7 +456,7 @@ export default function ProfilePage() {
                       setMonth(new Date(year, monthIndex + 1, 1))
                     }
                     aria-label="Next month"
-                    className="rounded-lg border border-gray-200 p-2 hover:bg-gray-50"
+                    className="rounded-lg border border-gray-200 p-2 hover:bg-gray-50 cursor-pointer"
                   >
                     <ChevronRight size={18} />
                   </button>
@@ -417,42 +481,87 @@ export default function ProfilePage() {
                   ))}
 
                   {calendarDays.map((day, index) => {
-                    const status = day ? getStatus(day) : "";
-                    const isToday = status === "Today";
+                    const record = day ? getAttendanceRecord(day) : null;
+                    const rawStatus = (record?.status || "").trim();
 
-                    const statusClass =
-                      status === "Present"
-                        ? "border-green-200 bg-green-50 text-green-700"
-                        : status === "Absent"
-                        ? "border-red-200 bg-red-50 text-red-600"
-                        : status === "Holiday"
-                        ? "border-orange-200 bg-orange-50 text-orange-700"
-                        : status === "Weekend"
-                        ? "border-gray-200 bg-gray-100 text-gray-500"
-                        : "";
+                    const isToday = Boolean(
+                      today &&
+                        day === today.getDate() &&
+                        monthIndex === today.getMonth() &&
+                        year === today.getFullYear()
+                    );
+
+                    const isSelected = selectedDay === day;
+
+                    // Check if date is in the future
+                    const dayDate = day ? new Date(year, monthIndex, day, 23, 59, 59, 999) : null;
+                    const isFuture = dayDate && today ? dayDate.getTime() > today.getTime() : false;
+
+                    // Only show status when an actual MongoDB record exists and the date is not in the future
+                    let status: string | null = null;
+                    let statusClass = "border-gray-200 bg-gray-50 text-gray-700";
+                    let dotClass = "bg-gray-400";
+
+                    if (!isFuture && record && rawStatus) {
+                      if (rawStatus === "Present") {
+                        status = "Present";
+                        statusClass = "border-emerald-200 bg-emerald-50 text-emerald-800";
+                        dotClass = "bg-emerald-500";
+                      } else if (rawStatus === "Absent") {
+                        status = "Absent";
+                        statusClass = "border-rose-200 bg-rose-50 text-rose-800";
+                        dotClass = "bg-rose-500";
+                      } else if (rawStatus === "Late") {
+                        status = "Late";
+                        statusClass = "border-amber-200 bg-amber-50 text-amber-800";
+                        dotClass = "bg-amber-500";
+                      } else if (
+                        rawStatus === "On Leave" ||
+                        rawStatus === "Excused" ||
+                        rawStatus.toLowerCase() === "onleave"
+                      ) {
+                        status = "On Leave";
+                        statusClass = "border-indigo-200 bg-indigo-50 text-indigo-800";
+                        dotClass = "bg-indigo-500";
+                      }
+                    }
 
                     return (
                       <div
                         key={`${year}-${monthIndex}-${index}`}
-                        className="flex min-h-16.5 min-w-0 flex-col items-center border border-gray-200 px-0.5 py-2 sm:min-h-19"
+                        onClick={() => {
+                          if (day) {
+                            setSelectedDay(selectedDay === day ? null : day);
+                          }
+                        }}
+                        className={`flex min-h-16.5 min-w-0 flex-col items-center border border-gray-200 px-0.5 py-2 sm:min-h-19 cursor-pointer transition ${
+                          isSelected ? "bg-yellow-50/50 ring-1 ring-yellow-400 inset-0" : "hover:bg-gray-50/80"
+                        }`}
                       >
                         {day && (
                           <>
-                            <span
-                              className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold sm:h-7 sm:w-7 sm:text-sm ${
-                                isToday
-                                  ? "bg-green-600 text-white"
-                                  : "text-gray-800"
-                              }`}
-                            >
-                              {day}
-                            </span>
+                            {isToday ? (
+                              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-yellow-400 text-xs font-black text-slate-950 shadow ring-2 ring-yellow-400 ring-offset-2 sm:h-8 sm:w-8 sm:text-sm">
+                                {day}
+                              </span>
+                            ) : (
+                              <span
+                                className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold sm:h-8 sm:w-8 sm:text-sm ${
+                                  isSelected
+                                    ? "bg-slate-900 text-white font-bold"
+                                    : "text-gray-800"
+                                }`}
+                              >
+                                {day}
+                              </span>
+                            )}
 
                             {status && (
                               <span
-                                className={`mt-1 max-w-full truncate rounded border px-1 py-0.5 text-[9px] font-semibold sm:px-1.5 sm:text-[10px] ${statusClass}`}
+                                className={`mt-1 inline-flex max-w-full items-center gap-1 truncate rounded border px-1 py-0.5 text-[8.5px] font-bold sm:px-1.5 sm:text-[9.5px] ${statusClass}`}
                               >
-                                {status}
+                                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotClass}`} />
+                                <span className="truncate">{status}</span>
                               </span>
                             )}
                           </>
@@ -461,21 +570,137 @@ export default function ProfilePage() {
                     );
                   })}
                 </div>
+
+                {/* Calendar Legend */}
+                <div className="mt-5 rounded-xl border border-gray-100 bg-gray-50/70 p-3.5">
+                  <p className="mb-2.5 text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                    Attendance Calendar Legend
+                  </p>
+                  <div className="flex flex-wrap items-center gap-3 sm:gap-5 text-xs text-gray-700">
+                    <div className="flex items-center gap-1.5">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-yellow-400 text-[10px] font-black text-slate-950 ring-1 ring-yellow-400">
+                        {today ? today.getDate() : "15"}
+                      </span>
+                      <span className="font-semibold text-slate-900">Today&apos;s Date (Indicator)</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
+                      <span className="font-semibold text-emerald-800">Present</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="h-2.5 w-2.5 rounded-full bg-rose-500"></span>
+                      <span className="font-semibold text-rose-800">Absent</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="h-2.5 w-2.5 rounded-full bg-amber-500"></span>
+                      <span className="font-semibold text-amber-800">Late</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="h-2.5 w-2.5 rounded-full bg-indigo-500"></span>
+                      <span className="font-semibold text-indigo-800">On Leave</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Selected Date Details Card */}
+                {selectedDay !== null && (
+                  <div className="mt-4 rounded-xl border border-yellow-200 bg-yellow-50/70 p-4">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-bold uppercase tracking-wider text-yellow-900">
+                        Selected Date:{" "}
+                        {new Date(year, monthIndex, selectedDay).toLocaleDateString("en-IN", {
+                          weekday: "long",
+                          day: "numeric",
+                          month: "long",
+                          year: "numeric",
+                        })}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDay(null)}
+                        className="rounded px-2 py-0.5 text-xs font-semibold text-gray-600 hover:bg-yellow-200/50 hover:text-gray-900 cursor-pointer"
+                      >
+                        Clear
+                      </button>
+                    </div>
+
+                    {getAttendanceRecord(selectedDay) ? (
+                      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4 text-xs">
+                        <div>
+                          <span className="text-gray-500">Status</span>
+                          <p className="mt-0.5 font-bold text-gray-950">
+                            {getAttendanceRecord(selectedDay)?.status}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">Class / Dept</span>
+                          <p className="mt-0.5 font-semibold text-gray-950">
+                            {getAttendanceRecord(selectedDay)?.className || profile.department || "—"}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">Recorded By</span>
+                          <p className="mt-0.5 font-semibold text-gray-950">
+                            {getAttendanceRecord(selectedDay)?.markedBy?.name || "Authorized Staff"}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">Remarks</span>
+                          <p className="mt-0.5 font-semibold text-gray-950">
+                            {getAttendanceRecord(selectedDay)?.remarks || "Regular attendance"}
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-xs text-gray-600">
+                        No attendance record found for this date.
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
 
-              <div className="p-5 sm:p-6">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
-                    <p className="text-sm text-gray-500">Pending</p>
-                    <p className="mt-2 text-2xl font-bold text-orange-500">
-                      0
+              <div className="p-5 sm:p-6 border-t border-gray-100">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  <div className="rounded-xl border border-gray-100 bg-gray-50 p-3.5">
+                    <p className="text-xs text-gray-500">Present Days</p>
+                    <p className="mt-1 text-xl font-extrabold text-emerald-600">
+                      {attendanceStats.presentDays}
                     </p>
                   </div>
 
-                  <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
-                    <p className="text-sm text-gray-500">Approved</p>
-                    <p className="mt-2 text-2xl font-bold text-green-600">
-                      0
+                  <div className="rounded-xl border border-gray-100 bg-gray-50 p-3.5">
+                    <p className="text-xs text-gray-500">Absent Days</p>
+                    <p className="mt-1 text-xl font-extrabold text-rose-600">
+                      {attendanceStats.absentDays}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-gray-100 bg-gray-50 p-3.5">
+                    <p className="text-xs text-gray-500">Late Days</p>
+                    <p className="mt-1 text-xl font-extrabold text-amber-600">
+                      {attendanceStats.lateDays}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-gray-100 bg-gray-50 p-3.5">
+                    <p className="text-xs text-gray-500">On Leave</p>
+                    <p className="mt-1 text-xl font-extrabold text-indigo-600">
+                      {attendanceStats.leaveDays}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-gray-100 bg-gray-50 p-3.5">
+                    <p className="text-xs text-gray-500">Total Working</p>
+                    <p className="mt-1 text-xl font-extrabold text-gray-900">
+                      {attendanceStats.totalWorkingDays}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-3.5">
+                    <p className="text-xs font-semibold text-yellow-800">Attendance Rate</p>
+                    <p className="mt-1 text-xl font-black text-yellow-950">
+                      {attendanceStats.attendancePercentage}%
                     </p>
                   </div>
                 </div>
@@ -494,8 +719,8 @@ export default function ProfilePage() {
                 </div>
 
                 <Link
-                  href="/leave-requests"
-                  className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-yellow-400 px-4 py-3 text-sm font-semibold text-gray-900 hover:bg-yellow-500"
+                  href="/attendance/leaves"
+                  className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-yellow-400 px-4 py-3 text-sm font-semibold text-gray-900 hover:bg-yellow-500 cursor-pointer"
                 >
                   <CalendarClock size={17} />
                   Apply for Leave
@@ -504,7 +729,7 @@ export default function ProfilePage() {
             </section>
 
             {/* ERP information */}
-            <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+            <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm xl:col-span-2">
               <div className="flex items-center gap-3 bg-linear-to-r from-blue-100 to-cyan-100 px-5 py-5">
                 <div className="rounded-xl bg-blue-500 p-3 text-white">
                   <GraduationCap size={23} />
@@ -520,19 +745,19 @@ export default function ProfilePage() {
                 </div>
               </div>
 
-              <div className="space-y-4 p-5 sm:p-6">
+              <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2 lg:grid-cols-4 sm:p-6">
                 <div className="flex items-center gap-3 rounded-xl border border-gray-100 p-4">
-                  <ShieldCheck className="text-green-600" size={21} />
+                  <ShieldCheck className="text-green-600 shrink-0" size={21} />
                   <div>
                     <p className="text-sm text-gray-500">Account Role</p>
-                    <p className="font-semibold text-gray-900">
+                    <p className="font-semibold text-gray-900 capitalize">
                       {role}
                     </p>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-3 rounded-xl border border-gray-100 p-4">
-                  <Building2 className="text-blue-600" size={21} />
+                  <Building2 className="text-blue-600 shrink-0" size={21} />
                   <div className="min-w-0">
                     <p className="text-sm text-gray-500">Institution</p>
                     <p className="wrap-break-words font-semibold text-gray-900">
@@ -542,7 +767,7 @@ export default function ProfilePage() {
                 </div>
 
                 <div className="flex items-center gap-3 rounded-xl border border-gray-100 p-4">
-                  <CheckCircle2 className="text-green-600" size={21} />
+                  <CheckCircle2 className="text-green-600 shrink-0" size={21} />
                   <div>
                     <p className="text-sm text-gray-500">Account Status</p>
                     <p className="font-semibold text-green-700">Active</p>
@@ -550,7 +775,7 @@ export default function ProfilePage() {
                 </div>
 
                 <div className="flex items-center gap-3 rounded-xl border border-gray-100 p-4">
-                  <Clock className="text-orange-500" size={21} />
+                  <Clock className="text-orange-500 shrink-0" size={21} />
                   <div>
                     <p className="text-sm text-gray-500">Portal</p>
                     <p className="font-semibold text-gray-900">
@@ -566,4 +791,3 @@ export default function ProfilePage() {
     </div>
   );
 }
-
