@@ -45,6 +45,7 @@ type Profile = {
   role: string;
   department?: string;
   className?: string;
+  section?: string;
   rollNumber?: string;
   employeeId?: string;
 };
@@ -197,6 +198,7 @@ export default function ProfilePage() {
           role: u.role || "User",
           department: u.department || "",
           className: u.className || u.class || "",
+          section: u.section || "",
           rollNumber: u.rollNumber || "",
           employeeId: u.employeeId || "",
         };
@@ -306,6 +308,24 @@ export default function ProfilePage() {
       value: displayValue(profile.address),
       icon: UserRound,
     },
+    ...(profile.section
+      ? [
+          {
+            label: "Section",
+            value: profile.section,
+            icon: UserRound,
+          },
+        ]
+      : []),
+    ...(profile.rollNumber
+      ? [
+          {
+            label: "Roll Number",
+            value: profile.rollNumber,
+            icon: UserRound,
+          },
+        ]
+      : []),
   ];
 
   return (

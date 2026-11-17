@@ -228,6 +228,7 @@ export const createUser = async (req, res, next) => {
         if (department !== undefined) existing.department = String(department).trim();
         if (req.body.className !== undefined) existing.className = String(req.body.className).trim();
         if (req.body.section !== undefined) existing.section = String(req.body.section).trim();
+        if (req.body.rollNumber !== undefined) existing.rollNumber = String(req.body.rollNumber).trim();
         if (designation !== undefined) existing.designation = String(designation).trim();
         if (status !== undefined) existing.status = String(status).toLowerCase();
         if (password && String(password).trim().length >= 6) {
@@ -235,6 +236,19 @@ export const createUser = async (req, res, next) => {
         }
 
         await existing.save();
+
+        if (existing.role === "STUDENT") {
+          const studentUpdate = {};
+          if (req.body.rollNumber !== undefined) studentUpdate.rollNumber = existing.rollNumber;
+          if (req.body.section !== undefined) studentUpdate.section = existing.section;
+          if (req.body.className !== undefined) studentUpdate.className = existing.className;
+          if (Object.keys(studentUpdate).length > 0) {
+            await Student.findOneAndUpdate(
+              { $or: [{ user: existing._id }, { email: existing.email }] },
+              { $set: studentUpdate }
+            ).catch(() => {});
+          }
+        }
 
         return res.status(200).json({
           success: true,
@@ -280,6 +294,7 @@ export const createUser = async (req, res, next) => {
       department: department ? department.trim() : "General",
       className: req.body.className ? String(req.body.className).trim() : "",
       section: req.body.section ? String(req.body.section).trim() : "",
+      rollNumber: req.body.rollNumber ? String(req.body.rollNumber).trim() : "",
       designation: designation ? designation.trim() : "",
       joiningDate: joiningDate ? new Date(joiningDate) : new Date(),
       status: status ? status.toLowerCase() : "active",
@@ -320,6 +335,7 @@ export const createUser = async (req, res, next) => {
         newUser.studentId = generatedStudentId;
         newUser.className = studentClassName;
         newUser.section = studentSection;
+        newUser.rollNumber = req.body.rollNumber ? String(req.body.rollNumber).trim() : generatedStudentId;
         await newUser.save();
       }
     }
@@ -436,6 +452,7 @@ export const updateUser = async (req, res, next) => {
     if (department !== undefined) user.department = department.trim();
     if (req.body.className !== undefined) user.className = String(req.body.className).trim();
     if (req.body.section !== undefined) user.section = String(req.body.section).trim();
+    if (req.body.rollNumber !== undefined) user.rollNumber = String(req.body.rollNumber).trim();
     if (designation !== undefined) user.designation = designation.trim();
     if (joiningDate) user.joiningDate = new Date(joiningDate);
     if (status !== undefined) user.status = status.toLowerCase();
@@ -457,6 +474,7 @@ export const updateUser = async (req, res, next) => {
       if (name || firstName !== undefined || lastName !== undefined) studentSync.name = user.name;
       if (req.body.className !== undefined) studentSync.className = user.className;
       if (req.body.section !== undefined) studentSync.section = user.section;
+      if (req.body.rollNumber !== undefined) studentSync.rollNumber = user.rollNumber;
       if (email) studentSync.email = user.email;
       if (Object.keys(studentSync).length > 0) {
         await Student.findOneAndUpdate(

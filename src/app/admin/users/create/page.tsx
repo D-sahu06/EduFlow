@@ -18,6 +18,8 @@ import {
   Loader2,
   Cake,
   MapPin,
+  Hash,
+  Layers,
 } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -41,6 +43,7 @@ export default function CreateAccountPage() {
   const [role, setRole] = useState("Teacher");
   const [className, setClassName] = useState("");
   const [section, setSection] = useState("");
+  const [rollNumber, setRollNumber] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
@@ -109,6 +112,9 @@ export default function CreateAccountPage() {
         if (u.emergencyRelation) setEmergencyRelation(u.emergencyRelation);
         if (u.address) setAddress(u.address);
         if (u.department) setDepartment(u.department);
+        if (u.className) setClassName(u.className);
+        if (u.section) setSection(u.section);
+        if (u.rollNumber || u.employeeId) setRollNumber(u.rollNumber || u.employeeId || "");
         setRole("Principal");
         setMessage("Loaded your Principal profile details. Modify any fields and submit to update.");
       }
@@ -184,8 +190,9 @@ export default function CreateAccountPage() {
         email: email.trim().toLowerCase(),
         role: roleEnum,
         department: department.trim() || "General",
-        className: className.trim(),
+        className: className.trim() || department.trim(),
         section: section.trim(),
+        rollNumber: rollNumber.trim(),
         phone: phone.trim(),
         dob: dob || undefined,
         birthDate: dob || undefined,
@@ -224,6 +231,9 @@ export default function CreateAccountPage() {
           emergencyRelation: emergencyRelation.trim(),
           address: address.trim(),
           department: department.trim() || currentUser?.department,
+          className: className.trim() || department.trim() || currentUser?.className,
+          section: section.trim() || currentUser?.section,
+          rollNumber: rollNumber.trim() || currentUser?.rollNumber,
         };
 
         localStorage.setItem("eduflow-user", JSON.stringify(mergedUser));
@@ -512,8 +522,45 @@ export default function CreateAccountPage() {
                   <input
                     id="department"
                     value={department}
-                    onChange={(e) => setDepartment(e.target.value)}
+                    onChange={(e) => {
+                      setDepartment(e.target.value);
+                      if (!className) setClassName(e.target.value);
+                    }}
                     placeholder="e.g. Computer Science or Class 10"
+                    className="w-full py-3 text-sm outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Section */}
+              <div>
+                <label htmlFor="section" className="mb-2 block text-sm font-semibold">
+                  Section
+                </label>
+                <div className="flex items-center gap-3 rounded-xl border border-gray-200 px-3 focus-within:border-yellow-400">
+                  <Layers size={18} className="text-gray-400 shrink-0" />
+                  <input
+                    id="section"
+                    value={section}
+                    onChange={(e) => setSection(e.target.value)}
+                    placeholder="e.g. A, B, or Section 1"
+                    className="w-full py-3 text-sm outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Roll Number */}
+              <div>
+                <label htmlFor="rollNumber" className="mb-2 block text-sm font-semibold">
+                  Roll Number
+                </label>
+                <div className="flex items-center gap-3 rounded-xl border border-gray-200 px-3 focus-within:border-yellow-400">
+                  <Hash size={18} className="text-gray-400 shrink-0" />
+                  <input
+                    id="rollNumber"
+                    value={rollNumber}
+                    onChange={(e) => setRollNumber(e.target.value)}
+                    placeholder="e.g. STU101 or 25"
                     className="w-full py-3 text-sm outline-none"
                   />
                 </div>
@@ -598,35 +645,6 @@ export default function CreateAccountPage() {
                 </div>
               </div>
             </div>
-
-            {(role === "User" || role === "Student") && (
-              <div className="mt-5 grid gap-5 sm:grid-cols-2">
-                <div>
-                  <label htmlFor="className" className="mb-2 block text-sm font-semibold">
-                    Assigned Class (optional)
-                  </label>
-                  <input
-                    id="className"
-                    value={className}
-                    onChange={(e) => setClassName(e.target.value)}
-                    placeholder="e.g. CS, IT, Class 10, 12th"
-                    className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-yellow-400"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="section" className="mb-2 block text-sm font-semibold">
-                    Assigned Section (optional)
-                  </label>
-                  <input
-                    id="section"
-                    value={section}
-                    onChange={(e) => setSection(e.target.value)}
-                    placeholder="e.g. A, B, 1"
-                    className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-yellow-400"
-                  />
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Feedback messages */}
