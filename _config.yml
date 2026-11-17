@@ -1,0 +1,22 @@
+# Jekyll configuration for GitHub Pages
+title: EduFlow ERP
+description: Next-generation school & institute ERP management system
+
+# Exclude dependency, virtual environment, and generated build folders
+exclude:
+  - backend/node_modules
+  - frontend/node_modules
+  - node_modules
+  - backend/venv
+  - venv
+  - .venv
+  - .next
+  - frontend/.next
+  - .git
+  - .github
+  - .gemini
+  - .vscode
+  - backend/package-lock.json
+  - package-lock.json
+  - Gemfile
+  - Gemfile.lock
